@@ -104,6 +104,33 @@ def test_generation_prompt_only_uses_content_prefix_with_goal_encoding():
     assert calls == 4
 
 
+def test_multivector_goal_state_shapes_and_validation_are_supported():
+    dataset, batch = _batch()
+    model = ModeTransformer(
+        dataset.vocab,
+        "B10",
+        d_model=16,
+        nhead=4,
+        layers=1,
+        dropout=0.0,
+        goal_vectors=4,
+    ).eval()
+    _, goal = model.encode(batch["goal_prompt"])
+    assert goal.shape == (2, 4, 16)
+    logits, encoded_goal, _ = model.generation_forward(
+        batch["generation_prompt"],
+        torch.full((2, 1), dataset.vocab.OUT_BOS, dtype=torch.long),
+        goal_prompt=batch["goal_prompt"],
+    )
+    assert logits.shape[0] == 2
+    assert encoded_goal is not None and encoded_goal.shape == (2, 4, 16)
+    validation_score, validation_facets = model.validation_logits(
+        batch["prompt"], batch["target"], encoded_goal, goal_prompt=batch["goal_prompt"]
+    )
+    assert validation_score.shape == (2,)
+    assert validation_facets.shape == (2, dataset.vocab.max_facets)
+
+
 def test_seeded_initialization_and_optimizer_step_are_deterministic():
     dataset, batch = _batch()
 

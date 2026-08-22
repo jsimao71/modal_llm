@@ -1,0 +1,42 @@
+{
+  "status": "one-seed z-only representation diagnostic; not a headline result",
+  "date": "2026-08-22",
+  "comparison": [
+    {
+      "condition": "single_vector_strong_goal",
+      "config": "configs/paper1/z-only pilot strong-goal inline",
+      "baseline": "B5",
+      "goal_vectors": 1,
+      "exact_match": 0.1484375,
+      "facet_satisfaction": 0.6080729234090541,
+      "shuffled_goal_effect": 0.041015625,
+      "zero_goal_effect": 0.05859375,
+      "random_goal_effect": 0.08203125,
+      "goal_probe_linear_test_facet_accuracy": 0.6434302908726178,
+      "goal_probe_linear_test_joint_exact_match": 0.166015625,
+      "facet_goal_substitution_success": 0.91015625,
+      "goal_separation_margin": 0.166740810025658
+    },
+    {
+      "condition": "multivector_strong_goal",
+      "config": "configs/paper1/z-only-multivector.yaml",
+      "baseline": "B5",
+      "goal_vectors": 4,
+      "exact_match": 0.14453125,
+      "facet_satisfaction": 0.5834309961646795,
+      "shuffled_goal_effect": 0.05078125,
+      "zero_goal_effect": 0.1015625,
+      "random_goal_effect": 0.126953125,
+      "goal_probe_linear_test_facet_accuracy": 0.6514543630892679,
+      "goal_probe_linear_test_joint_exact_match": 0.181640625,
+      "facet_goal_substitution_success": 0.884765625,
+      "goal_separation_margin": 0.2561003353584965
+    }
+  ],
+  "interpretation": [
+    "Moving from one goal vector to four does not improve held-out task exact match in this first pilot.",
+    "The multi-vector latent modestly improves correct-versus-shuffled separation, zero-goal sensitivity, random-goal sensitivity, and held-out linear probe accuracy.",
+    "The result supports the idea that richer latent capacity helps goal decodability and causal leverage, but not yet enough to pass the strong z-only gate.",
+    "Because task quality is flat while causal signatures improve, the next step should strengthen how the richer latent is used rather than expanding to large depth or horizon sweeps."
+  ]
+}

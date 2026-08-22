@@ -43,6 +43,7 @@ hypotheses.
 
 ```powershell
 modal-llm train-eval --config configs/paper1/z-only-gate.yaml
+modal-llm train-eval --config configs/paper1/z-only-multivector.yaml
 ```
 
 This configuration removes token-level goal access from the generator by using the
@@ -52,6 +53,12 @@ random-goal interventions, plus frozen-goal linear and MLP probes over held-out 
 labels. Treat this as the first go/no-go gate for the next iteration: do not start the
 depth/time sweep or the five-seed baseline suite unless correct-$Z$ clearly beats
 shuffled-$Z$ on held-out tasks and the probes show strong goal decodability.
+
+The multi-vector variant is the first Paper 1 context/prefix extension under the same
+Z-only protocol. It keeps additive latent conditioning but replaces the single goal
+vector with a learned bank of latent goal vectors. Use it to test whether one-shot
+single-vector compression is the current bottleneck before moving on to deeper
+architectural sweeps.
 
 ## Main model and five-seed baseline suite
 

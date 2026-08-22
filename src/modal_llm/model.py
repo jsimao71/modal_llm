@@ -67,6 +67,7 @@ class ModeTransformer(nn.Module):
         dropout: float = 0.1,
         max_length: int = 128,
         generation_prompt_only: bool = False,
+        goal_vectors: int = 1,
     ) -> None:
         super().__init__()
         if baseline not in BASELINES:
@@ -75,6 +76,8 @@ class ModeTransformer(nn.Module):
         self.spec = BASELINES[baseline]
         self.d_model = d_model
         self.generation_prompt_only = generation_prompt_only
+        self.goal_vectors = goal_vectors
+        self.latent_width = d_model * goal_vectors
         self.token_embedding = nn.Embedding(vocab.size, d_model, padding_idx=vocab.PAD)
         self.position_embedding = nn.Embedding(max_length, d_model)
         self.mode_embedding = nn.Embedding(len(MODES), d_model)
@@ -85,19 +88,23 @@ class ModeTransformer(nn.Module):
         self.transformer = nn.TransformerEncoder(layer, layers, norm=nn.LayerNorm(d_model))
         self.goal_head = nn.Sequential(nn.Linear(d_model, d_model), nn.Tanh())
         self.review_head = nn.Sequential(nn.Linear(d_model, d_model), nn.Tanh())
-        self.goal_condition = nn.Linear(d_model, d_model, bias=False)
+        self.goal_queries = nn.Parameter(torch.randn(goal_vectors, d_model) * 0.02)
+        self.review_queries = nn.Parameter(torch.randn(goal_vectors, d_model) * 0.02)
+        self.goal_condition = nn.Linear(self.latent_width, d_model, bias=False)
         self.match_control = nn.Sequential(
             nn.Linear(d_model, d_model), nn.GELU(), nn.Linear(d_model, d_model)
         )
         self.lm_head = nn.Linear(d_model, vocab.size, bias=False)
         self.lm_head.weight = self.token_embedding.weight
-        self.facet_head = nn.Linear(d_model, vocab.max_facets)
-        validator_width = d_model * 4
+        self.facet_head = nn.Linear(self.latent_width, vocab.max_facets)
+        validator_width = self.latent_width * 4
         self.validator_body = nn.Sequential(
-            nn.Linear(validator_width, d_model), nn.GELU(), nn.LayerNorm(d_model)
+            nn.Linear(validator_width, self.latent_width),
+            nn.GELU(),
+            nn.LayerNorm(self.latent_width),
         )
-        self.validator_score = nn.Linear(d_model, 1)
-        self.validator_facets = nn.Linear(d_model, vocab.max_facets)
+        self.validator_score = nn.Linear(self.latent_width, 1)
+        self.validator_facets = nn.Linear(self.latent_width, vocab.max_facets)
         self._forward_calls = 0
         self._token_positions = 0
         self.apply(self._initialize)
@@ -169,6 +176,27 @@ class ModeTransformer(nn.Module):
         active = (~padding).to(hidden.dtype).unsqueeze(-1)
         return (hidden * active).sum(1) / active.sum(1).clamp_min(1.0)
 
+    @staticmethod
+    def _flatten_state(state: torch.Tensor) -> torch.Tensor:
+        return state.reshape(state.shape[0], -1)
+
+    def _extract_state(
+        self,
+        hidden: torch.Tensor,
+        padding: torch.Tensor,
+        *,
+        queries: torch.Tensor,
+        head: nn.Module,
+    ) -> torch.Tensor:
+        if self.goal_vectors == 1:
+            return head(self._mean(hidden, padding))
+        mask = padding.unsqueeze(1)
+        scores = torch.einsum("kd,btd->bkt", queries, hidden) / (self.d_model ** 0.5)
+        scores = scores.masked_fill(mask, -1e9)
+        weights = scores.softmax(-1)
+        contexts = torch.einsum("bkt,btd->bkd", weights, hidden)
+        return head(contexts)
+
     def encode(self, prompt: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         if self.spec.encode_mask is None:
             raise RuntimeError(f"{self.spec.name} has no separate encode pass")
@@ -177,7 +205,9 @@ class ModeTransformer(nn.Module):
             self._embeddings(prompt, "encode"), padding,
             causal=self.spec.encode_mask == "causal",
         )
-        goal = self.goal_head(self._mean(hidden, padding))
+        goal = self._extract_state(
+            hidden, padding, queries=self.goal_queries, head=self.goal_head
+        )
         return hidden, goal
 
     def prepare_generation(
@@ -206,7 +236,7 @@ class ModeTransformer(nn.Module):
         effective_goal = forced_goal if forced_goal is not None else goal
         conditioning = None
         if self.spec.use_goal and effective_goal is not None:
-            conditioning = self.goal_condition(effective_goal).unsqueeze(1)
+            conditioning = self.goal_condition(self._flatten_state(effective_goal)).unsqueeze(1)
             prefix = prefix + conditioning
         return GenerationContext(prefix, prefix_padding, prefix.shape[1], goal, conditioning)
 
@@ -282,10 +312,17 @@ class ModeTransformer(nn.Module):
         )
         output_hidden = hidden[:, prompt_width:, :]
         output_padding = padding[:, prompt_width:]
-        output = self.review_head(self._mean(output_hidden, output_padding))
+        output = self._extract_state(
+            output_hidden, output_padding, queries=self.review_queries, head=self.review_head
+        )
         reread_goal = None
         if self.spec.validator == "reread":
-            reread_goal = self.goal_head(self._mean(hidden[:, :prompt_width], padding[:, :prompt_width]))
+            reread_goal = self._extract_state(
+                hidden[:, :prompt_width],
+                padding[:, :prompt_width],
+                queries=self.goal_queries,
+                head=self.goal_head,
+            )
         return output, reread_goal
 
     def validation_logits(
@@ -304,8 +341,16 @@ class ModeTransformer(nn.Module):
                 _, goal = self.encode(prompt if goal_prompt is None else goal_prompt)
             intended = goal
         assert intended is not None
+        intended_flat = self._flatten_state(intended)
+        output_flat = self._flatten_state(output)
         features = torch.cat(
-            [intended, output, intended - output, intended * output], dim=-1
+            [
+                intended_flat,
+                output_flat,
+                intended_flat - output_flat,
+                intended_flat * output_flat,
+            ],
+            dim=-1,
         )
         hidden = self.validator_body(features)
         return self.validator_score(hidden).squeeze(-1), self.validator_facets(hidden)
@@ -317,7 +362,7 @@ class ModeTransformer(nn.Module):
         invariance_weight: float,
     ) -> dict[str, torch.Tensor]:
         raw = F.binary_cross_entropy_with_logits(
-            self.facet_head(goal), batch["bits"], reduction="none"
+            self.facet_head(self._flatten_state(goal)), batch["bits"], reduction="none"
         )
         facet = (raw * batch["active_facets"]).sum() / batch["active_facets"].sum()
         result = {"goal": facet}

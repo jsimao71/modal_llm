@@ -80,6 +80,7 @@ def _model(config: dict[str, Any], dataset: ConstraintDataset) -> ModeTransforme
         dropout=float(values.get("dropout", 0.1)),
         max_length=int(values.get("max_length", 128)),
         generation_prompt_only=bool(values.get("generation_prompt_only", False)),
+        goal_vectors=int(values.get("goal_vectors", 1)),
     )
 
 
@@ -99,7 +100,7 @@ def _collect_goal_states(
         batch = _move(raw, device)
         _, goal = model.encode(_goal_prompt(batch))
         assert goal is not None
-        states.append(goal.detach().cpu())
+        states.append(goal.detach().cpu().reshape(goal.shape[0], -1))
         bits.append(batch["bits"].detach().cpu())
         active.append(batch["active_facets"].detach().cpu())
     return {
@@ -485,12 +486,16 @@ def evaluate(
             random_exact.extend((random_ok | ~active).all(1).float().cpu().tolist())
             paraphrase_goals = _paraphrase_goal_prompt(batch)
             _, paraphrase_goal = model.encode(paraphrase_goals)
+            goal_flat = goal.reshape(goal.shape[0], -1)
+            paraphrase_flat = paraphrase_goal.reshape(paraphrase_goal.shape[0], -1)
             paraphrase_similarity.extend(
-                torch.nn.functional.cosine_similarity(goal, paraphrase_goal).cpu().tolist()
+                torch.nn.functional.cosine_similarity(goal_flat, paraphrase_flat).cpu().tolist()
             )
             if len(goal) > 1:
                 different_goal_similarity.extend(
-                    torch.nn.functional.cosine_similarity(goal, goal.roll(1, 0)).cpu().tolist()
+                    torch.nn.functional.cosine_similarity(
+                        goal_flat, goal_flat.roll(1, 0)
+                    ).cpu().tolist()
                 )
             paraphrase_generated, _, _ = model.generate(
                 generation_prompt, batch["target"].shape[1], forced_goal=paraphrase_goal
