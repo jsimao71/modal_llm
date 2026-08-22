@@ -1,0 +1,176 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,hyperref,microtype}
+\usepackage[numbers]{natbib}
+\title{Beyond Homogeneous Next-Token Prediction:\\A Research Program for Mode-Structured, Goal-State Transformers}
+\author{Position Paper 0 -- Inception Draft}
+\date{\today}
+\begin{document}\maketitle
+\begin{abstract}
+Decoder-only transformers perform task encoding, generation, review, and validation through repeated causal next-token computation. Agent systems often add external memory, verification, retry, and controller loops, demonstrating the utility of separating these functions at the system level without showing which separations belong inside a model. We propose a falsifiable research program around a deliberately small first intervention: one shared transformer operating in explicit encode, generate, review, and validate modes, with a latched latent task state $Z_G$ and a realized-output state $Z_Y$. Encoding and review may use bidirectional attention while generation remains causal. The core empirical question is whether intended--realized comparison improves task fidelity and calibrated self-evaluation after controlling parameters, data, and inference compute. Planning, tools, continual learning, and goal hierarchies are integration contracts rather than claims of the first experiment.
+\end{abstract}
+
+\section{Motivation}
+Autoregressive transformers optimize $p(x_{t+1}\mid x_{\le t})$ while supporting task interpretation, constraint retention, transformation, generation, and self-evaluation. Scale can produce strong versions of these behaviors, but capability alone does not establish that one homogeneous causal computation is the most efficient or robust implementation. Existing systems already separate recurrent state in Transformer-XL \citep{dai2019transformerxl}, output verification in mathematical reasoning \citep{cobbe2021verifiers}, candidate aggregation in self-consistency \citep{wang2023selfconsistency}, and external reason--act or reflection loops \citep{yao2023react,shinn2023reflexion}. These precedents motivate controlled decomposition; they do not by themselves imply that the proposed internal state is useful.
+
+The central question is: \emph{which controller structures are intrinsically runtime functions, and which could be represented more directly inside the model?}
+
+\section{Scope and Testable Commitments}
+The first target is not a general cognitive architecture. It is the cycle
+\begin{equation}
+X\xrightarrow{E}Z_G\xrightarrow{G}Y\xrightarrow{R}Z_Y\xrightarrow{V}(r,\mathbf r_f,\Delta Z),
+\end{equation}
+tested on tasks with machine-checkable requirement facets. The contribution is the joint experimental object: explicit mode identity, a persistent intended state, a separately computed realized state, and validation of their discrepancy under matched controls. Bidirectional encoding, continuous conditioning, and verifier-based selection all have precedents \citep{dong2019unified,li2021prefixtuning,cobbe2021verifiers}; none is claimed as novel in isolation.
+
+The program makes six near-term commitments: bidirectional encoding must beat equal extra causal compute; $Z_G$ must add information beyond rereading the prompt; bidirectional review must beat an equal causal pass; $Z_G$--$Z_Y$ validation must generalize beyond generator-specific errors; mode embeddings must matter beyond masks; and any selection/retry gain must survive end-to-end inference-compute matching. Failed components are removed rather than retained for conceptual symmetry.
+
+\section{From Token Prediction to Persistent State}
+We propose a gradual transition toward
+\begin{equation}
+(S_t,Z_t,M_t,O_t)\rightarrow(S_{t+1},Z_{t+1},M_{t+1},A_t),
+\end{equation}
+where $S$ is working neural state, $Z$ intentional/task state, $M$ selectively active memory, $O$ observation, and $A$ eventually linguistic or external action. Language modeling remains central but is no longer the sole conceptual definition of cognition.
+
+A useful progression is
+\begin{equation}
+\text{reactive}\rightarrow\text{selective}\rightarrow\text{stateful}\rightarrow\text{goal-directed}\rightarrow\text{planning/action}.
+\end{equation}
+
+\section{Four Kinds of Selection}
+We distinguish memory selection (what information becomes active), computational selection (what transformations modify state), intentional selection (what objective controls behavior), and action selection (what linguistic or external action occurs). The long-term loop is
+\begin{equation}
+\boxed{\text{goal}\rightarrow\text{memory}\rightarrow\text{computation}\rightarrow\text{action}\rightarrow\text{observation}\rightarrow\text{goal update}}.
+\end{equation}
+This decomposition defines a vocabulary for later work. It is not evidence that all four selection mechanisms require separate learned modules.
+
+\section{Explicit Cognitive Modes}
+Let $m\in\{E,G,R,V,S\}$ denote encode, generate, review, validate, and eventually sleep/consolidate modes. A shared transformer is
+\begin{equation}
+H^{(m)}=F_\theta(X,Z,e_m,\mathcal M_m),
+\end{equation}
+where $e_m$ is an explicit learned mode embedding and $\mathcal M_m$ a mode-specific attention mask. Shared weights with different masks are technically grounded by unified transformer work \citep{dong2019unified}; here the mask change is embedded in a persistent cognitive cycle rather than being the full contribution.
+
+\subsection{Encoding and Latched Goal State}
+Task encoding may inspect the complete request bidirectionally:
+\begin{equation}
+H_E=F_\theta(X,Z_0,e_E,\mathcal M_{bi}),\qquad Z_G=Q_G(H_E).
+\end{equation}
+$Z_G$ should be extracted before the vocabulary projection. Initial extraction variants include mean pooling, a special task token, one learned goal query, and only then a small number of facet queries. Initial conditioning uses an additive broadcast projection; prefix-like latent key/value conditioning is a controlled alternative related to continuous prefixes \citep{li2021prefixtuning}. A later representation may factor objective, constraints, desired output, and evaluation criteria, but these facets must be recovered from separately stored ground truth rather than assumed from visualization.
+
+\subsection{Generation}
+Generation remains causal:
+\begin{equation}
+p(Y\mid X,Z_G)=\prod_t p(y_t\mid y_{<t},X,Z_G,m=G).
+\end{equation}
+The first experiments latch $Z_G$ for the whole generation. This directly tests whether explicit goal state reduces the need to reconstruct intent repeatedly from prompt tokens and generated history.
+
+\subsection{Review and Realized State}
+After generation, the completed candidate becomes an object of bidirectional processing:
+\begin{equation}
+H_R=F_\theta(Y,Z_G,e_R,\mathcal M_{bi}),\qquad Z_Y=Q_R(H_R).
+\end{equation}
+Review can therefore capture properties of the whole answer unavailable to an intermediate causal state. Required ablations compare bidirectional review with the final generation hidden state, an extra causal pass, and review that re-reads the original prompt.
+
+\subsection{Validation and Discrepancy}
+A validator compares intended and realized state:
+\begin{equation}
+(r,\mathbf r_f,\Delta Z)=V_\phi(Z_G,Z_Y),
+\end{equation}
+where $r$ is a calibrated success probability, $\mathbf r_f$ facet-level satisfaction, and $\Delta Z$ a representation of what remains unfulfilled. A simple head is
+\begin{equation}
+r=\sigma(\mathrm{MLP}[Z_G;Z_Y;Z_G-Z_Y;Z_G\odot Z_Y]).
+\end{equation}
+The discrepancy can later condition revision or become a seed for corrective subgoals.
+
+\section{Inference as a Primitive Cognitive Cycle}
+The minimal loop is
+\begin{equation}
+X\xrightarrow{E}Z_G\xrightarrow{G}Y\xrightarrow{R}Z_Y\xrightarrow{V}(r,\Delta Z).
+\end{equation}
+If validation fails, revision can use
+\begin{equation}
+Y_{k+1}=G(Z_G,Y_k,\Delta Z_k).
+\end{equation}
+Best-of-$N$ inference becomes $Y^*=\arg\max_i V(Z_G,R(Y_i))$. Compute-matched controls are mandatory because additional forward passes and samples are themselves strong baselines.
+
+\section{Minimal Experimental Contract}
+Paper 1 begins with synthetic but diagnostic generators: independent constraints, late critical constraints, instruction-like distractors, ordered outputs, deterministic transformations, and valid/near-miss candidate pairs differing in one facet. Each example stores its prompt, target, facet schema, deterministic validator result, generator version, and split seed. Held-out evaluation changes prompt templates and corruption processes, not merely random examples.
+
+The baseline ladder isolates one claim at a time: decoder-only; parameter-matched decoder; compute-matched decoder; bidirectional encode without $Z_G$; causal encode with $Z_G$; bidirectional encode with $Z_G$; final-state, causal, and bidirectional review; prompt--answer validator without persistent state; and $Z_G$--$Z_Y$ validator. Headline comparisons use identical data, token budgets, optimization searches, and multiple seeds. Inference policies report generated tokens, forward passes, approximate FLOPs, latency, and wall time.
+
+Success is not one aggregate accuracy improvement. It requires improved externally checked facet satisfaction, calibrated error detection on held-out corruptions, predictable causal effects when $Z_G$ is zeroed, shuffled, or facet-substituted, and a competitive quality--compute frontier. A strong negative result occurs when matched causal computation recovers the gains, validation remains shortcut-prone, or interventions show that $Z_G$ is unused.
+
+\section{Why Begin Before Planning?}
+Explicit user tasks remove the planning confound. The program first asks whether a known goal can be represented and executed more reliably. Completion transitions, multiple goals, generated subgoals, tools, callbacks, and hierarchical learning remain out of scope until the minimal cycle passes its stop conditions.
+
+\section{Long-Term Integration Contracts}
+The following subsections specify interfaces that should not be blocked by Paper 1; they are hypotheses, not implementation requirements.
+
+\subsection{Multi-Goal Extension}
+A naive set of equally active latents risks recreating attention dilution. A better organization distinguishes
+\begin{equation}
+Z_t=\{z_{root},z_{active},z_{parents},z_{pending}\},
+\end{equation}
+while inactive goals remain addressable but not continuously materialized. A task object may contain
+\begin{equation}
+T_i=(g_i,s_i,p_i,c_i,d_i,r_i),
+\end{equation}
+for goal, status, parent, children, dependencies, and completion evidence. Completion should be inferred and externally grounded where possible, e.g. $q_i=P(C_i=1\mid z_i,h_t,o_t)$ rather than trusting a generated ``done'' token.
+
+\subsection{Progressive Memory and PRA}
+PRA motivates a broader principle: \emph{only computationally relevant state should be materially active}. Applied to goals, this implies progressive task-state retrieval instead of continuous injection of an entire hierarchy. Applied to tools, it suggests persistent representations retrieved according to active goals instead of repeatedly tokenized schemas. The lines should remain experimentally independent until their individual mechanisms mature.
+
+\subsection{Goal-Conditioned Residual Computation}
+Goal state enables
+\begin{equation}
+h_{\ell+1}=h_\ell+g_\ell(h_\ell,Z,m)F_\ell(h_\ell),
+\end{equation}
+complementing input-driven gating $g(h)$ and top-down modulation $g(h_\ell,h_{\ell+k})$. This realizes computational selection: whether a transformation is useful for the current state, mode, and objective.
+
+\subsection{Tools and Event-Driven Control}
+A later architecture can expose a structured action channel
+\begin{equation}
+A_t=(tool\_id,parameters,goal\_id)
+\end{equation}
+and receive asynchronous callbacks
+\begin{equation}
+O_{t+k}=(event\_id,goal\_id,status,observation).
+\end{equation}
+The runtime retains security and execution responsibilities; the model can represent why an action was invoked, which goal awaits it, and what follows from the result.
+
+\subsection{Reinforcement Learning and Timescales}
+Explicit state permits reward over cognitive transitions,
+\begin{equation}
+R(S_t,Z_t,A_t,O_{t+1},S_{t+1},Z_{t+1}),
+\end{equation}
+and future policies for goal selection, action, completion, and decomposition. This connects naturally to hierarchical RL \citep{sutton1999between}. It also exposes multiple timescales:
+\begin{equation}
+\tau_{neural}<\tau_{token}<\tau_{action}<\tau_{subgoal}<\tau_{task}<\tau_{persistent\ objective}.
+\end{equation}
+RL should follow, not precede, calibrated supervised/external validation.
+
+\subsection{Sleep and Consolidation}
+A sleep mode is attractive but uncontrolled continual base-weight updates risk forgetting, drift, poisoning, reward hacking, and irreproducibility. Initially freeze $\theta$ and train candidate adapters $\theta'=\theta+\Delta\theta_{sleep}$ from provenance-aware replay. Promote only after held-out and regression evaluation. User ratings, edits, retries, deterministic tests, tool outcomes, and controller changes are noisy evidence, not automatic labels. Sleep-time compute has also been explored as precomputation outside immediate response time \citep{snell2025sleeptime}; our longer-term interest is safe consolidation.
+
+\section{Mechanistic Measurement}
+The program combines outcome metrics with internal measurements: memory activation; attention dilution; residual update magnitude and direction; refinement versus complementarity/orthogonality versus interference; temporal feature stability; head/layer similarity; mode specialization; $Z$ stability and paraphrase invariance; causal interventions on $Z$; intended-realized discrepancy; and validation calibration. Causal tests should zero, shuffle, substitute, and perturb $Z$, remove/swap mode embeddings, and compare fixed with recomputed state.
+
+\section{Paper Program}
+\textbf{Paper 0: Position.} This manuscript.\\
+\textbf{Paper 1: Encode--Generate--Review--Validate.} Minimal shared transformer, one persistent $Z$, controlled tasks, deterministic validation, and compute-controlled ablations.\\
+\textbf{Paper 2: Goal-Conditioned Computation.} Rich residual gating conditioned on state/mode.\\
+\textbf{Paper 3: Goal Dynamics.} Multiple task objects, completion, dependencies, suspension/resumption, and eventually decomposition.\\
+\textbf{Paper 4: Progressive Tools and Native Action.} Persistent tools, retrieval, structured action, callbacks, model/controller boundary.\\
+\textbf{Paper 5: Consolidation and RL.} Replay, adapter consolidation, transition rewards, hierarchical RL.
+
+\section{Falsification Criteria}
+The program is weakened if bidirectional encoding fails against compute controls; $Z$ is redundant with ordinary context; review adds no information beyond equivalent causal compute; validators learn shortcuts or remain poorly calibrated; explicit modes do not differentiate computation; or gains vanish under parameter/data/compute matching. Negative results should prune the architecture.
+
+\section{Relation to Existing Paradigms}
+Unified masking demonstrates shared causal/bidirectional transformers \citep{dong2019unified}; encoder-decoder systems already structurally separate encoding and generation \citep{vaswani2017attention,raffel2020exploring}; continuous prefixes provide a precedent for latent conditioning \citep{li2021prefixtuning}; and self-consistency, verifiers, and reward models demonstrate benefits from candidate evaluation \citep{wang2023selfconsistency,cobbe2021verifiers,ouyang2022training}. Hierarchical RL formalizes temporally extended subgoals \citep{sutton1999between}. The narrower organizing hypothesis here is that persistent intended state, explicit modes, and intended--realized comparison should be first-class experimental variables in a shared substrate.
+
+\section{Conclusion}
+The long-term target is not a transformer decorated with cognition-inspired modules. It is an empirically grounded account of which functions require distinct representations, selection mechanisms, and timescales. The program therefore proceeds by \emph{isolate $\rightarrow$ measure $\rightarrow$ understand $\rightarrow$ falsify/refine $\rightarrow$ cross-pollinate $\rightarrow$ integrate}. If the independent lines converge, a homogeneous next-token predictor may gradually become a persistent goal-directed cognitive dynamical system in which language generation is one powerful action channel among others.
+
+\bibliographystyle{plainnat}\bibliography{../common/references}
+\end{document}
