@@ -1,0 +1,171 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,hyperref,microtype}
+\usepackage[numbers]{natbib}
+\title{Encode, Generate, Review, Validate:\\Explicit Cognitive Modes with Persistent Goal State in a Shared Transformer}
+\author{Paper 1 -- Experimental Inception Draft}
+\date{\today}
+\begin{document}\maketitle
+\begin{abstract}
+Decoder-only language models use the same causal transformer stack for understanding a request, generating an answer, and implicitly evaluating what has been generated. We study a minimal alternative that preserves a shared transformer body but introduces explicit operating modes and persistent task state. The model first encodes the complete task with bidirectional self-attention, extracts a latent goal representation $Z_G$, generates causally while conditioned on this latched state, re-encodes the completed output in review mode, extracts a realized-output representation $Z_Y$, and validates the candidate by comparing intended and realized state. We define parameter-, data-, and compute-controlled baselines, machine-checkable multi-constraint generators, held-out near-miss validation, causal interventions on $Z_G$ and mode identity, calibration metrics, and immutable run artifacts. An executable CPU-scale scaffold accompanies this inception draft; it validates the protocol but does not yet support empirical claims.
+\end{abstract}
+
+\section{Problem Statement}
+A decoder-only transformer must encode a task and generate its solution under a causal mask. Even if a prompt is entirely available before answer generation, hidden representations at prompt position $i$ are constrained to $x_{\le i}$. We test whether separating encode, generate, review, and validate improves goal fidelity while retaining a shared neural substrate. The modes are experimental interventions, not claims of unique correspondence to human cognition.
+
+\section{Architecture}
+Let
+\begin{equation}
+H^{(m)}=F_\theta(X,Z,e_m,\mathcal M_m),
+\end{equation}
+where $e_m$ is a learned mode embedding and $\mathcal M_m$ a mode-specific attention mask. Encode/review use bidirectional masks; generation is causal. The first design keeps $\theta$ shared.
+
+For an input of length $n$, the causal mask permits attention when $j\leq i$, whereas the bidirectional mask permits every non-padding pair $(i,j)$. Mode embeddings remain present when masks are equal, so mask and mode identity can be ablated separately. All reported baseline models instantiate the same token, position, mode, transformer, goal, review, and validator parameters. We report both total and active parameters; inactive heads are retained to make checkpoint shapes and total parameter counts exactly comparable.
+
+\subsection{Encode and Goal Extraction}
+\begin{equation}
+H_E=F_\theta(X,\varnothing,e_E,\mathcal M_{bi}),\qquad Z_G=Q_G(H_E).
+\end{equation}
+$Q_G$ operates before vocabulary projection. The executable V0 uses masked mean pooling followed by a learned projection. Subsequent registered variants compare a special goal token, one learned query, then $k\in\{4,8\}$ facet queries. Shared causal/bidirectional mask operation has precedent \citep{dong2019unified}; the question here is its use inside a persistent goal-state cycle.
+
+\subsection{Generation}
+\begin{equation}
+p(Y\mid X,Z_G)=\prod_{t=1}^{T}p_\theta(y_t\mid y_{<t},X,Z_G,e_G).
+\end{equation}
+The V0 conditioning is an additive broadcast projection $h'_{0,t}=h_{0,t}+W_ZZ_G$ applied to the generation input stream. Token-level encoded prompt states are passed into the causal generation pass, isolating bidirectional encoding without requiring a separate decoder. Registered follow-ups are prefix-like latent KV, related to continuous prefix conditioning \citep{li2021prefixtuning}, and lightweight cross-attention. Goal-conditioned residual gating is deferred. The primary condition latches $Z_G$ throughout generation.
+
+\subsection{Review and Validation}
+For completed output $Y$,
+\begin{equation}
+H_R=F_\theta(Y,Z_G,e_R,\mathcal M_{bi}),\qquad Z_Y=Q_R(H_R).
+\end{equation}
+Compare final causal state, an extra causal pass, bidirectional $Y$-only review, and bidirectional $(X,Y)$ review. A validator computes
+\begin{equation}
+(r,\mathbf r_f,\Delta Z)=V_\phi(Z_G,Z_Y),
+\end{equation}
+with scalar success probability, optional per-facet satisfaction, and discrepancy state. A baseline head uses
+\begin{equation}
+u=[Z_G;Z_Y;Z_G-Z_Y;Z_G\odot Z_Y],\quad r=\sigma(\mathrm{MLP}(u)).
+\end{equation}
+
+\section{Research Questions and Hypotheses}
+RQ1: Does bidirectional task encoding help under matched compute? RQ2: Does latched $Z_G$ improve requirement retention, especially for long outputs? RQ3: Does bidirectional review improve error detection beyond causal alternatives? RQ4: Does $(Z_G,Z_Y)$ validation outperform simply rereading prompt and answer? RQ5: Can validation improve selection/retry under compute controls? RQ6: Do modes and $Z$ have identifiable causal/mechanistic effects?
+
+We expect encode gains for distributed/late constraints, $Z$ gains to increase with generation length and simultaneous requirements, review gains for global inconsistencies/omissions, and intended-realized comparison to improve facet localization and candidate ranking.
+
+\section{Controlled Dataset Suite}
+\subsection{Multi-Constraint Generation}
+Each prompt contains $K$ independently checkable requirements. Vary $K$, prompt length, requirement position, distractor count, output length, and requirement type (content, order, format, exclusion, cross-part consistency). Store structured ground truth and deterministic validators.
+
+\subsection{Late Constraints and Distractors}
+Move decisive constraints to the end while holding semantics fixed. Add instruction-like non-authoritative distractors. These tasks test global encoding and whether $Z$ captures task role rather than lexical salience.
+
+\subsection{Ordered and Deterministic Tasks}
+Require multiple ordered sections or transformations with independent checks. Include arithmetic, symbolic transformations, structured data, and small code tasks with executable tests.
+
+\subsection{Candidate Pairs}
+Construct valid/near-miss pairs differing in exactly one requirement for facet validation, ranking, and mechanistic probes.
+
+\subsection{Executable V0 Generator}
+The initial generator represents each requirement as a separately checkable binary facet while varying facet count, order, filler length, and the number of explicitly delimited distractors. One authoritative requirement is always placed last. The ordered target contains one token per active facet; a near miss flips exactly one facet. A counterfactual prompt and target flip the same facet, enabling a directed $Z_G$ substitution test. Train, validation, and test splits use disjoint deterministic seed namespaces. Every run records the generator version and a hash of all split manifests. This synthetic vocabulary tests the architecture and harness, not general language understanding; natural templates, executable transformations, code tasks, and pretrained backbones are required in the next empirical stage.
+
+\section{Baselines and Ablations}
+\begin{center}\begin{tabular}{lll}\toprule
+ID & Encode/State & Review/Validation\\\midrule
+B0 & causal decoder, no $Z$ & none\\
+B1 & B0 + matched residual MLP & none\\
+B2 & extra causal encode, no $Z$ & none\\
+B3 & bidirectional encode, no $Z$ & none\\
+B4 & causal encode + $Z_G$ & none\\
+B5 & bidirectional encode + $Z_G$ & none\\
+B6 & B5 & final generation state\\
+B7 & B5 & extra causal review\\
+B8 & B5 & bidirectional $Y$ review\\
+B9 & no persistent $Z_G$ & bidirectional $(X,Y)$ reread\\
+B10 & bidirectional encode + $Z_G$ & bidirectional $(X,Y)$, $(Z_G,Z_Y)$\\
+\bottomrule\end{tabular}\end{center}
+All rows have the same instantiated parameter count. B1 activates a capacity-matching residual MLP without task state; B2 spends an extra causal pass; B3 and B5 pass token-level encoded prompt states into generation. Later work compares shared weights with small mode adapters and fully separate modules only if bidirectional/causal interference is observed.
+
+\section{Training}
+The executable V0 jointly trains generation, goal decoding, validation, facet localization, and pairwise ranking from scratch. This is a harness-validation configuration, not the proposed final curriculum. The empirical progression is: Stage 0 establishes a base LM or small pretrained model with exact disabled-feature parity. Stage 1 mixes causal/bidirectional mask training with explicit mode embeddings. Stage 2 adds goal objectives:
+\begin{equation}
+L=L_{LM}+\lambda_G L_G,
+\end{equation}
+where $L_G$ may include facet decoding, paraphrase-invariant contrastive learning, structured requirement reconstruction, or predictive usefulness. Stage 3 adds
+\begin{equation}
+L=L_{LM}+\lambda_G L_G+\lambda_V L_V+\lambda_R L_{rank}.
+\end{equation}
+Use deterministic external labels where possible. Only after calibration should Stage 4 test retry/revision or limited RL.
+
+For V0, $L_G$ is masked binary facet decoding, $L_V$ is BCE on valid and one-facet-corrupted candidates, and $L_{rank}=\log(1+\exp(r^- - r^+))$. A separate multilabel BCE trains facet satisfaction. Loss weights, optimizer, seed, and gradient clipping are configuration values rather than hidden constants.
+
+\section{Inference Policies}
+Single generation is the base. Validation-only scores without changing output. Best-of-$N$ selects $Y^*=\arg\max_i r_i$. Threshold retry regenerates if $r<\tau$. Revision conditions on discrepancy:
+\begin{equation}
+Y'=G(X,Z_G,Y,\Delta Z).
+\end{equation}
+Every result reports model calls, generated tokens, approximate FLOPs, latency, and wall time.
+
+\section{Metrics}
+\textbf{External task metrics:} accuracy, exact match, F1, full-task pass rate, fraction of satisfied constraints, per-facet recall, executable-test pass rate, and degradation with generation length.
+
+\textbf{Validation:} AUROC, AUPRC, Brier score, expected calibration error, ranking accuracy, best-of-$N$ oracle gap, false-positive rate on confidently wrong outputs, and facet localization accuracy.
+
+\textbf{Goal representation:} same-goal paraphrase similarity, different-goal separation, linear-probe facet recovery, $Z$ stability, sensitivity to requirement position, and causal interventions.
+
+\textbf{Mechanistic:} attention entropy/dilution; residual update norms; update/state alignment; refinement versus complementary/orthogonal update versus interference; layer/head similarity; mode-conditioned representation similarity; temporal feature stability.
+
+\section{Causal Intervention Suite}
+The executable evaluation zeroes $Z_G$; shuffles it across examples; substitutes a same-goal paraphrase state; substitutes a state from a prompt with one flipped facet; removes mode embeddings while retaining masks; and swaps encode/generate embeddings. Registered extensions perturb learned facet directions, freeze/unfreeze $Q_G$, swap review identity, and compare latched with recomputed $Z_G$. A genuine goal representation should preserve behavior under same-goal substitution, degrade under zero/shuffle interventions, and alter the targeted output facet under counterfactual substitution. Correlation or probe accuracy alone is insufficient.
+
+\section{Compute and Parameter Controls}
+Mode architectures can win trivially by spending extra compute. Report training/inference FLOPs, forward-pass count, sequence lengths, parameter count, and latency. Compare review against equivalent causal compute; best-of-$N$ validation against random and likelihood-based selection; and $Z$ parameters against matched width/MLP additions. Distinguish quality-per-sample from quality-per-compute.
+
+The harness counts actual shared-transformer calls and non-padding token positions at runtime. It reports base generation, validation, and diagnostic interventions separately. The implementation-level estimate is $2P$ FLOPs per forward token-position and $6P$ per training token-position for $P$ parameters; this coarse proxy is always accompanied by measured wall time and raw counts. It is not used as a substitute for profiler-based FLOPs in headline experiments. Autoregressive V0 intentionally recomputes the encode pass at every step; optimized latent caching must report a new compute profile rather than silently changing the comparison.
+
+\section{Expected Failure Modes}
+\textbf{Shortcut validation:} mitigate with held-out generators and adversarial near-misses.\\
+\textbf{Goal collapse:} $Z$ may encode prompt identity rather than intent; test paraphrases, probes, and substitutions.\\
+\textbf{Mode collapse:} embeddings may be ignored; probe and swap modes.\\
+\textbf{Bidirectional/causal interference:} shared weights may lose generation quality; only then test adapters/partial sharing.\\
+\textbf{Self-confirmation:} generator and validator may share blind spots; use deterministic external validators.\\
+\textbf{Compute illusion:} gains may vanish under matched budget; treat this as a valid negative result.
+
+\section{Future Goal Dynamics}
+If $Z_G$ reliably represents explicit tasks and $\Delta Z$ unmet requirements, next introduce explicit task transitions and completion evidence. Future state can distinguish root, active, parent, pending, blocked, suspended, and completed goals. Only after known hierarchies work should the model learn decomposition
+\begin{equation}
+D(z_g,h)\rightarrow\{z_{g_1},\ldots,z_{g_k}\}.
+\end{equation}
+Thus Paper 1 is a substrate for planning rather than an attempt to solve planning.
+
+\section{Future Gated Residual Integration}
+Once $Z$ is meaningful, test
+\begin{equation}
+h_{\ell+1}=h_\ell+g_\ell(h_\ell,Z,m)F_\ell(h_\ell),
+\end{equation}
+asking whether explicit goals determine which computations should be active. This is intentionally not required by Paper 1.
+
+\section{Future PRA and Progressive Tool Integration}
+PRA addresses selective memory; this paper addresses goal/state control. Later typed references may represent tasks, tools, skills, documents, and observations, with progressive materialization conditioned on the active goal. Tool selection can then become goal-conditioned affordance/action selection rather than repeated schema-token processing. These are integration targets, not dependencies.
+
+\section{Feedback, RL, and Consolidation}
+A deployed system can accumulate tuples $(X,Z_G,Y,Z_Y,r,feedback)$ plus deterministic tests, retries, accepted edits, tool outcomes, and controller choices. This is richer experience than plain next-token text. Online base-weight learning is deferred. Later sleep/consolidation should use provenance-aware replay, adapter-only candidate updates, held-out regression gates, and rollback. RL should reward externally grounded transitions rather than blindly maximize the model's own validator.
+
+\section{Relation to Prior Work}
+Unified language models demonstrate shared weights under bidirectional and causal masks \citep{dong2019unified}; encoder-decoder transformers separate encoding from decoding \citep{vaswani2017attention,raffel2020exploring}; continuous prefixes condition generation on learned latent vectors \citep{li2021prefixtuning}; self-consistency uses multiple reasoning samples \citep{wang2023selfconsistency}; and verifiers or reward models explicitly score outputs \citep{cobbe2021verifiers,ouyang2022training}. The present work asks whether persistent intended task state, explicit modes, and a realized-output representation provide value beyond these components under controlled composition.
+
+\section{Success Criteria}
+A strong result requires more than benchmark improvement. Across multiple seeds and held-out task generators, at least several of the following should hold: bidirectional encode improves constraint fidelity under compute control; $Z$ improves long-output retention; interventions on $Z$ predictably alter goal satisfaction; review improves externally verified error detection; validator scores are calibrated and generalize; validation improves selection/retry at competitive compute; and internal metrics show interpretable mode/goal effects.
+
+A strong negative result is also informative: if the causal decoder reproduces all benefits under matched resources, explicit modes or $Z$ should not be retained merely for conceptual appeal.
+
+\section{Reproducibility Plan}
+Every run stores git commit, complete config, seed, dataset generator/version/hash, architecture and parameter count, optimizer/schedule, hardware, training/evaluation time, token/forward-pass counts, raw predictions, validator outputs, and plot/table source data. Headline results use multiple seeds. Raw run outputs are immutable.
+
+The repository exposes a CPU smoke configuration, a one-seed B0--B10 integration suite, a main configuration, and a five-seed baseline suite. A timestamped run directory is created with exclusive semantics and contains the resolved configuration, provenance, dataset manifests, epoch history, checkpoint, raw JSONL predictions, and scalar metrics. Unit tests check generator determinism, one-facet corruptions, exact parameter matching, causal prefix invariance, bidirectional suffix sensitivity, and finite multi-objective losses. Smoke completion establishes only that the protocol executes; it is not entered into result tables.
+
+\section{Conclusion}
+Encode--Generate--Review--Validate is intended as the smallest rigorous test of a broader idea: functions currently forced into homogeneous autoregressive computation may benefit from explicit mode and persistent task state. The design preserves shared weights to avoid explaining gains through parameter multiplication, uses external validation to avoid circular self-evaluation, and emphasizes causal/mechanistic analysis. If successful, it creates a controlled bridge from next-token models toward multi-timescale goal dynamics, selective computation, progressive memory, tools, and reinforcement learning. If unsuccessful, its ablations identify which proposed cognitive distinctions are unnecessary.
+
+\bibliographystyle{plainnat}\bibliography{../common/references}
+\end{document}

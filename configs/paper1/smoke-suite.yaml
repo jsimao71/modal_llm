@@ -1,0 +1,33 @@
+experiment: paper1-smoke-suite
+baselines: [B0, B1, B2, B3, B4, B5, B6, B7, B8, B9, B10]
+seeds: [0]
+device: cpu
+model:
+  d_model: 16
+  nhead: 4
+  layers: 1
+  ff_mult: 2
+  dropout: 0.0
+  max_length: 96
+data:
+  train_size: 16
+  validation_size: 8
+  test_size: 8
+  min_facets: 2
+  max_facets: 4
+  max_distractors: 1
+  max_filler: 1
+training:
+  epochs: 1
+  batch_size: 8
+  learning_rate: 0.001
+  weight_decay: 0.0
+  grad_clip: 1.0
+  loss_weights:
+    lm: 1.0
+    goal: 0.2
+    validation: 0.5
+    ranking: 0.2
+    facet: 0.2
+evaluation:
+  batch_size: 8

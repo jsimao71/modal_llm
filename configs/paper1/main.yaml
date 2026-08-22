@@ -1,0 +1,33 @@
+experiment: paper1-main
+baseline: B10
+seed: 0
+device: auto
+model:
+  d_model: 128
+  nhead: 8
+  layers: 4
+  ff_mult: 4
+  dropout: 0.1
+  max_length: 128
+data:
+  train_size: 20000
+  validation_size: 2000
+  test_size: 4000
+  min_facets: 2
+  max_facets: 6
+  max_distractors: 4
+  max_filler: 6
+training:
+  epochs: 12
+  batch_size: 128
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  grad_clip: 1.0
+  loss_weights:
+    lm: 1.0
+    goal: 0.2
+    validation: 0.5
+    ranking: 0.2
+    facet: 0.2
+evaluation:
+  batch_size: 256

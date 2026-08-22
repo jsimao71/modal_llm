@@ -149,11 +149,28 @@ choices are possible evidence, not automatically trustworthy labels.
 
 ## Files
 
--   `README.md`
--   `AGENTS.md`
--   `paper0_position.tex`
--   `paper1_encode_generate_review_validate.tex`
--   `references.bib`
+-   `docs/papers/AGENTS.md`: research and reproducibility contract.
+-   `docs/papers/paper0/paper0_position.tex`: position paper.
+-   `docs/papers/paper1/paper1_encode_generate_review_validate.tex`: Paper 1 protocol.
+-   `docs/papers/common/references.bib`: shared bibliography.
+-   `src/modal_llm/`: controlled generator, shared-mode model, metrics, and runner.
+-   `configs/paper1/`: smoke, main, and B0--B10 suite configurations.
+-   `tests/`: masks, parity, determinism, shapes, and loss smoke tests.
+
+## Run Paper 1 experiments
+
+```powershell
+python -m pip install -e .
+pytest
+modal-llm train-eval --config configs/paper1/smoke.yaml
+modal-llm suite --config configs/paper1/smoke-suite.yaml
+```
+
+Use `configs/paper1/main.yaml` for the main B10 run and
+`configs/paper1/baselines.yaml` for the five-seed B0--B10 comparison. Results
+are written to new timestamped directories and include configs, provenance,
+dataset hashes, checkpoints, raw predictions, calibration/task metrics, causal
+interventions, compute counts, and approximate FLOPs.
 
 The `.bib` file is a seed bibliography and should be verified against
 authoritative metadata before submission.
