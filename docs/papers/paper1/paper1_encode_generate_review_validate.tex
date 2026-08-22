@@ -67,7 +67,7 @@ Require multiple ordered sections or transformations with independent checks. In
 Construct valid/near-miss pairs differing in exactly one requirement for facet validation, ranking, and mechanistic probes.
 
 \subsection{Executable V0 Generator}
-The initial generator represents each requirement as a separately checkable binary facet while varying facet count, order, filler length, and the number of explicitly delimited distractors. One authoritative requirement is always placed last. The ordered target contains one token per active facet; a near miss flips exactly one facet. A counterfactual prompt and target flip the same facet, enabling a directed $Z_G$ substitution test. Train, validation, and test splits use disjoint deterministic seed namespaces. Every run records the generator version and a hash of all split manifests. This synthetic vocabulary tests the architecture and harness, not general language understanding; natural templates, executable transformations, code tasks, and pretrained backbones are required in the next empirical stage.
+The V0 generator represents each requirement as a separately checkable binary facet while varying facet count, order, filler length, and the number of explicitly delimited distractors. One authoritative requirement is always placed last. Train, validation, and test use both disjoint deterministic example namespaces and different prompt topologies: grouped requirements, reversed/grouped requirements, and locally interleaved authoritative/distractor blocks. The ordered target contains one token per active facet. Training corruptions flip one facet, validation targets the late facet, and test corruptions mix single and double flips, truncation, and invalid end markers. A counterfactual prompt and target flip the same authoritative facet, enabling a directed $Z_G$ substitution test. Every run records the generator version, split family, and SHA-256 hash of the fully materialized prompts and labels. This synthetic vocabulary tests the architecture and harness, not general language understanding; natural templates, executable transformations, code tasks, and pretrained backbones are required in the next empirical stage.
 
 \section{Baselines and Ablations}
 \begin{center}\begin{tabular}{lll}\toprule
@@ -87,7 +87,7 @@ B10 & bidirectional encode + $Z_G$ & bidirectional $(X,Y)$, $(Z_G,Z_Y)$\\
 All rows have the same instantiated parameter count. B1 activates a capacity-matching residual MLP without task state; B2 spends an extra causal pass; B3 and B5 pass token-level encoded prompt states into generation. Later work compares shared weights with small mode adapters and fully separate modules only if bidirectional/causal interference is observed.
 
 \section{Training}
-The executable V0 jointly trains generation, goal decoding, validation, facet localization, and pairwise ranking from scratch. This is a harness-validation configuration, not the proposed final curriculum. The empirical progression is: Stage 0 establishes a base LM or small pretrained model with exact disabled-feature parity. Stage 1 mixes causal/bidirectional mask training with explicit mode embeddings. Stage 2 adds goal objectives:
+The executable training protocol supports an initial goal warmup followed by joint generation, goal decoding, validation, facet localization, and pairwise ranking. Warmup minimizes masked facet reconstruction and same-goal paraphrase invariance before $Z_G$ is used as a generation condition. Joint checkpoints are selected only by loss on the held-out validation topology, with configurable evaluation cadence and bounded early stopping. The broader empirical progression remains: Stage 0 establishes a base LM or small pretrained model with exact disabled-feature parity. Stage 1 mixes causal/bidirectional mask training with explicit mode embeddings. Stage 2 adds goal objectives:
 \begin{equation}
 L=L_{LM}+\lambda_G L_G,
 \end{equation}
@@ -97,7 +97,7 @@ L=L_{LM}+\lambda_G L_G+\lambda_V L_V+\lambda_R L_{rank}.
 \end{equation}
 Use deterministic external labels where possible. Only after calibration should Stage 4 test retry/revision or limited RL.
 
-For V0, $L_G$ is masked binary facet decoding, $L_V$ is BCE on valid and one-facet-corrupted candidates, and $L_{rank}=\log(1+\exp(r^- - r^+))$. A separate multilabel BCE trains facet satisfaction. Loss weights, optimizer, seed, and gradient clipping are configuration values rather than hidden constants.
+For V0, $L_G$ combines masked binary facet decoding with cosine paraphrase invariance, $L_V$ is BCE on valid and deterministically corrupted candidates, and $L_{rank}=\log(1+\exp(r^- - r^+))$. A separate multilabel BCE trains facet satisfaction. Loss weights, warmup duration, optimizer, seed, validation cadence, and gradient clipping are configuration values rather than hidden constants.
 
 \section{Inference Policies}
 Single generation is the base. Validation-only scores without changing output. Best-of-$N$ selects $Y^*=\arg\max_i r_i$. Threshold retry regenerates if $r<\tau$. Revision conditions on discrepancy:
@@ -121,7 +121,7 @@ The executable evaluation zeroes $Z_G$; shuffles it across examples; substitutes
 \section{Compute and Parameter Controls}
 Mode architectures can win trivially by spending extra compute. Report training/inference FLOPs, forward-pass count, sequence lengths, parameter count, and latency. Compare review against equivalent causal compute; best-of-$N$ validation against random and likelihood-based selection; and $Z$ parameters against matched width/MLP additions. Distinguish quality-per-sample from quality-per-compute.
 
-The harness counts actual shared-transformer calls and non-padding token positions at runtime. It reports base generation, validation, and diagnostic interventions separately. The implementation-level estimate is $2P$ FLOPs per forward token-position and $6P$ per training token-position for $P$ parameters; this coarse proxy is always accompanied by measured wall time and raw counts. It is not used as a substitute for profiler-based FLOPs in headline experiments. Autoregressive V0 intentionally recomputes the encode pass at every step; optimized latent caching must report a new compute profile rather than silently changing the comparison.
+The harness counts actual shared-transformer calls and non-padding token positions at runtime. It reports base generation, validation, selection-time validation, and diagnostic interventions separately, together with instantiated and active parameter counts. The implementation-level estimate is $2P$ FLOPs per forward token-position and $6P$ per training token-position for $P$ parameters; this coarse proxy is always accompanied by measured wall time and raw counts. It is not used as a substitute for profiler-based FLOPs in headline experiments. Prompt encoding and $Z_G$ are computed once, cached, and latched for an autoregressive candidate; unit tests assert one encode call plus one causal call per generated token.
 
 \section{Expected Failure Modes}
 \textbf{Shortcut validation:} mitigate with held-out generators and adversarial near-misses.\\
@@ -162,7 +162,26 @@ A strong negative result is also informative: if the causal decoder reproduces a
 \section{Reproducibility Plan}
 Every run stores git commit, complete config, seed, dataset generator/version/hash, architecture and parameter count, optimizer/schedule, hardware, training/evaluation time, token/forward-pass counts, raw predictions, validator outputs, and plot/table source data. Headline results use multiple seeds. Raw run outputs are immutable.
 
-The repository exposes a CPU smoke configuration, a one-seed B0--B10 integration suite, a main configuration, and a five-seed baseline suite. A timestamped run directory is created with exclusive semantics and contains the resolved configuration, provenance, dataset manifests, epoch history, checkpoint, raw JSONL predictions, and scalar metrics. Unit tests check generator determinism, one-facet corruptions, exact parameter matching, causal prefix invariance, bidirectional suffix sensitivity, and finite multi-objective losses. Smoke completion establishes only that the protocol executes; it is not entered into result tables.
+The repository exposes CPU smoke and overfit gates, one-seed unstaged and staged held-out pilots, a main configuration, and a five-seed baseline suite. A timestamped run directory is created with exclusive semantics and contains the resolved configuration, provenance, materialized dataset hashes, epoch history, checkpoint, reload verification, raw JSONL predictions, and scalar metrics. Timestamped suite summaries include confidence intervals and seed-paired differences. Unit tests check generator determinism, split-family separation, multiple corruption types, counterfactual integrity, dataset-hash stability, exact parameter matching, active parameter accounting, causal prefix invariance, bidirectional suffix sensitivity, cached-encode call counts, seeded optimizer determinism, and finite multi-objective losses. Smoke and memorization-gate completion establish only that the protocol executes and can fit data; neither is entered into headline result tables.
+
+\section{Implementation Diagnostic (Not a Headline Result)}
+Before launching a multi-seed study, we ran a seed-0 optimization diagnostic with a small Transformer trained from scratch. A shared-example memorization gate reached 1.0 exact match for B0, B5, and B10 after 100, 250, and 250 optimizer updates, respectively; B10 also reached 1.0 validator AUROC. Thus the representative paths can fit the task and validator when generalization is deliberately removed. Table~\ref{tab:pilot-diagnostic} instead uses disjoint example namespaces, held-out prompt topologies, and held-out corruption families. ``Staged'' adds 15 goal-warmup epochs and validation-selected joint training. Effects are the decrease in exact match caused by the intervention; positive values indicate degradation.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{llrrrrr}\toprule
+Protocol & Baseline & Exact & Facet & Zero $Z_G$ & Shuffle $Z_G$ & Val. AUROC\\\midrule
+Unstaged & B0  & .430 & .797 & ---   & ---    & ---\\
+Unstaged & B5  & .109 & .553 & .020  & .000   & ---\\
+Unstaged & B10 & .102 & .539 & -.004 & .000   & .476\\
+Staged   & B5  & .168 & .604 & .090  & .004   & ---\\
+Staged   & B10 & .156 & .601 & .031  & -.016  & .575\\\bottomrule
+\end{tabular}
+\caption{Seed-0 implementation diagnostic on the held-out V0 generator. This table is not a hypothesis test.}
+\label{tab:pilot-diagnostic}
+\end{table}
+
+The held-out result is presently negative. Staging improves B5 and B10 relative to their unstaged variants, but both remain far below causal B0. Zeroing $Z_G$ becomes harmful, yet shuffling it does not consistently reduce accuracy, which indicates a generic conditioning effect rather than reliable example-specific control. B10 validation rises above chance (AUROC .575; pairwise ranking accuracy .637) but is not strong enough for selection claims. These observations block a costly multi-seed headline run: the next iteration should strengthen example-specific goal conditioning and the held-out validator objective, then require shuffle and counterfactual interventions to pass preregistered gates. The exact source values and interpretation are stored in \texttt{results/pilot\_iteration2.json}.
 
 \section{Conclusion}
 Encode--Generate--Review--Validate is intended as the smallest rigorous test of a broader idea: functions currently forced into homogeneous autoregressive computation may benefit from explicit mode and persistent task state. The design preserves shared weights to avoid explaining gains through parameter multiplication, uses external validation to avoid circular self-evaluation, and emphasizes causal/mechanistic analysis. If successful, it creates a controlled bridge from next-token models toward multi-timescale goal dynamics, selective computation, progressive memory, tools, and reinforcement learning. If unsuccessful, its ablations identify which proposed cognitive distinctions are unnecessary.

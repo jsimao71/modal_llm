@@ -18,6 +18,8 @@ data:
   max_distractors: 2
   max_filler: 2
 training:
+  goal_warmup_epochs: 1
+  validation_every: 1
   epochs: 1
   batch_size: 16
   learning_rate: 0.001
@@ -26,6 +28,7 @@ training:
   loss_weights:
     lm: 1.0
     goal: 0.2
+    goal_invariance: 0.2
     validation: 0.5
     ranking: 0.2
     facet: 0.2

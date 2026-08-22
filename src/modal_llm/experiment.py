@@ -41,12 +41,18 @@ def _move(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
 def _dataset(config: dict[str, Any], split: str, seed: int) -> ConstraintDataset:
     data = config["data"]
     size_key = {"train": "train_size", "validation": "validation_size", "test": "test_size"}[split]
+    prompt_families = dict(data.get("prompt_families") or {})
+    corruption_families = dict(data.get("corruption_families") or {})
+    namespaces = dict(data.get("namespaces") or {})
     return ConstraintDataset(
         int(data[size_key]), seed=seed, split=split,
         max_facets=int(data.get("max_facets", 4)),
         min_facets=int(data.get("min_facets", 2)),
         max_distractors=int(data.get("max_distractors", 2)),
         max_filler=int(data.get("max_filler", 3)),
+        prompt_family=prompt_families.get(split),
+        corruption_family=corruption_families.get(split),
+        namespace=namespaces.get(split),
     )
 
 
@@ -64,9 +70,10 @@ def _model(config: dict[str, Any], dataset: ConstraintDataset) -> ModeTransforme
 def train(
     model: ModeTransformer,
     dataset: ConstraintDataset,
+    validation_dataset: ConstraintDataset,
     config: dict[str, Any],
     device: torch.device,
-) -> tuple[list[dict[str, float]], int]:
+) -> tuple[list[dict[str, Any]], int, dict[str, int]]:
     values = config["training"]
     generator = torch.Generator().manual_seed(int(config["seed"]))
     loader = DataLoader(
@@ -78,13 +85,52 @@ def train(
         weight_decay=float(values.get("weight_decay", 0.01)),
     )
     weights = dict(values.get("loss_weights") or {})
-    history: list[dict[str, float]] = []
+    history: list[dict[str, Any]] = []
     updates = 0
+    selection_validation_calls = 0
+    selection_validation_positions = 0
     model.reset_compute_stats()
     model.train()
+    warmup_epochs = int(values.get("goal_warmup_epochs", 0)) if model.spec.use_goal else 0
+    invariance_weight = float(weights.get("goal_invariance", 0.0))
+    for epoch in range(warmup_epochs):
+        totals: dict[str, list[float]] = defaultdict(list)
+        started = time.perf_counter()
+        for raw in loader:
+            batch = _move(raw, device)
+            optimizer.zero_grad(set_to_none=True)
+            losses = model.goal_objective(batch, invariance_weight=invariance_weight)
+            losses["total"].backward()
+            clip_grad_norm_(model.parameters(), float(values.get("grad_clip", 1.0)))
+            optimizer.step()
+            updates += 1
+            for key, value in losses.items():
+                totals[key].append(float(value.detach()))
+        row: dict[str, Any] = {
+            f"train_{key}": mean(items) for key, items in totals.items()
+        }
+        row.update(
+            stage="goal_warmup",
+            epoch=epoch + 1,
+            updates=updates,
+            wall_seconds=time.perf_counter() - started,
+        )
+        history.append(row)
+        log_every = int(values.get("log_every", 1))
+        if (epoch + 1) % log_every == 0 or epoch + 1 == warmup_epochs:
+            print(json.dumps(row, sort_keys=True))
+
+    best_metric = math.inf
+    best_epoch = 0
+    best_state: dict[str, torch.Tensor] | None = None
+    stale_validations = 0
+    validation_every = int(values.get("validation_every", 1))
+    patience = int(values.get("early_stopping_patience", 0))
+    completed_joint_epochs = 0
     for epoch in range(int(values.get("epochs", 5))):
         totals: dict[str, list[float]] = defaultdict(list)
         started = time.perf_counter()
+        model.train()
         for raw in loader:
             batch = _move(raw, device)
             optimizer.zero_grad(set_to_none=True)
@@ -96,10 +142,55 @@ def train(
             for key, value in losses.items():
                 totals[key].append(float(value.detach()))
         row = {f"train_{key}": mean(items) for key, items in totals.items()}
-        row.update(epoch=epoch + 1, updates=updates, wall_seconds=time.perf_counter() - started)
+        row.update(
+            stage="joint",
+            epoch=epoch + 1,
+            updates=updates,
+            wall_seconds=time.perf_counter() - started,
+        )
+        completed_joint_epochs = epoch + 1
+        if (epoch + 1) % validation_every == 0:
+            before_validation = model.compute_stats()
+            held_out = validation_losses(model, validation_dataset, config, device)
+            after_validation = model.compute_stats()
+            selection_validation_calls += (
+                after_validation["forward_calls"] - before_validation["forward_calls"]
+            )
+            selection_validation_positions += (
+                after_validation["token_positions"] - before_validation["token_positions"]
+            )
+            row.update(held_out)
+            selected = float(held_out["validation_total"])
+            if selected < best_metric:
+                best_metric = selected
+                best_epoch = epoch + 1
+                best_state = {
+                    name: value.detach().cpu().clone()
+                    for name, value in model.state_dict().items()
+                }
+                stale_validations = 0
+            else:
+                stale_validations += 1
+            model.train()
         history.append(row)
-        print(json.dumps(row, sort_keys=True))
-    return history, updates
+        log_every = int(values.get("log_every", 1))
+        if (epoch + 1) % log_every == 0 or epoch + 1 == int(values.get("epochs", 5)):
+            print(json.dumps(row, sort_keys=True))
+        if patience and stale_validations >= patience:
+            break
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    compute = model.compute_stats()
+    training_compute = {
+        "forward_calls": compute["forward_calls"] - selection_validation_calls,
+        "token_positions": compute["token_positions"] - selection_validation_positions,
+        "selection_validation_forward_calls": selection_validation_calls,
+        "selection_validation_token_positions": selection_validation_positions,
+        "best_epoch": best_epoch or completed_joint_epochs,
+        "completed_joint_epochs": completed_joint_epochs,
+        "goal_warmup_epochs": warmup_epochs,
+    }
+    return history, updates, training_compute
 
 
 @torch.no_grad()
@@ -140,6 +231,9 @@ def evaluate(
     labels: list[int] = []
     scores: list[float] = []
     rankings: list[float] = []
+    corruption_probabilities: dict[str, dict[str, list[float]]] = defaultdict(
+        lambda: {"positive": [], "negative": [], "ranking": []}
+    )
     zero_exact: list[float] = []
     shuffle_exact: list[float] = []
     paraphrase_goal_exact: list[float] = []
@@ -252,6 +346,11 @@ def evaluate(
             labels.extend([1] * len(positive) + [0] * len(negative))
             scores.extend(positive_probability.cpu().tolist() + negative_probability.cpu().tolist())
             rankings.extend((positive > negative).float().cpu().tolist())
+            for index, corruption_type in enumerate(raw["corruption_types"]):
+                group = corruption_probabilities[corruption_type]
+                group["positive"].append(float(positive_probability[index]))
+                group["negative"].append(float(negative_probability[index]))
+                group["ranking"].append(float(positive[index] > negative[index]))
 
         after_validation = model.compute_stats()
         validation_calls += after_validation["forward_calls"] - after_interventions["forward_calls"]
@@ -266,6 +365,7 @@ def evaluate(
                 "generated": generated[index].cpu().tolist(),
                 "facet_fraction": float(facet_fraction[index]),
                 "exact": bool(batch_exact[index]),
+                "corruption_type": raw["corruption_types"][index],
             }
             if positive_probability is not None and negative_probability is not None:
                 row.update(
@@ -321,7 +421,42 @@ def evaluate(
                 / sum(label == 0 for label in labels)
             ),
         )
+        for corruption_type, group in sorted(corruption_probabilities.items()):
+            family_labels = [1] * len(group["positive"]) + [0] * len(group["negative"])
+            family_scores = group["positive"] + group["negative"]
+            safe_name = corruption_type.replace("-", "_")
+            metrics[f"validator_{safe_name}_auroc"] = binary_auroc(
+                family_labels, family_scores
+            )
+            metrics[f"validator_{safe_name}_ranking_accuracy"] = mean(group["ranking"])
     return metrics, predictions
+
+
+@torch.no_grad()
+def verify_checkpoint_reload(
+    checkpoint_path: Path,
+    model: ModeTransformer,
+    dataset: ConstraintDataset,
+    config: dict[str, Any],
+    device: torch.device,
+) -> bool:
+    """Reload a checkpoint into a fresh model and compare deterministic predictions."""
+
+    payload = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    reloaded = _model(config, dataset).to(device)
+    reloaded.load_state_dict(payload["model"], strict=True)
+    model.eval()
+    reloaded.eval()
+    sample_count = min(8, len(dataset))
+    raw = collate_examples([dataset[index] for index in range(sample_count)])
+    batch = _move(raw, device)
+    expected, _, _ = model.generate(batch["prompt"], batch["target"].shape[1])
+    actual, _, _ = reloaded.generate(batch["prompt"], batch["target"].shape[1])
+    states_equal = all(
+        torch.equal(value, reloaded.state_dict()[name])
+        for name, value in model.state_dict().items()
+    )
+    return states_equal and torch.equal(expected, actual)
 
 
 def run(config: dict[str, Any], output_root: Path, repository: Path) -> Path:
@@ -340,9 +475,12 @@ def run(config: dict[str, Any], output_root: Path, repository: Path) -> Path:
     validation_data = _dataset(config, "validation", seed)
     test_data = _dataset(config, "test", seed)
     datasets = {
-        "train": train_data.manifest(),
-        "validation": validation_data.manifest(),
-        "test": test_data.manifest(),
+        split: {**dataset.manifest(), "content_sha256": dataset.content_hash()}
+        for split, dataset in (
+            ("train", train_data),
+            ("validation", validation_data),
+            ("test", test_data),
+        )
     }
     provenance["datasets"] = datasets
     provenance["dataset_sha256"] = stable_hash(datasets)
@@ -351,8 +489,9 @@ def run(config: dict[str, Any], output_root: Path, repository: Path) -> Path:
     device = _device(str(config.get("device", "auto")))
     model = _model(config, train_data).to(device)
     before = time.perf_counter()
-    history, updates = train(model, train_data, config, device)
-    train_compute = model.compute_stats()
+    history, updates, train_compute = train(
+        model, train_data, validation_data, config, device
+    )
     train_wall = time.perf_counter() - before
     validation = validation_losses(model, validation_data, config, device)
     metrics, predictions = evaluate(model, test_data, config, device)
@@ -360,23 +499,49 @@ def run(config: dict[str, Any], output_root: Path, repository: Path) -> Path:
         baseline=baseline,
         seed=seed,
         parameter_count=model.parameter_count,
+        active_parameter_count=model.active_parameter_count,
         optimizer_updates=updates,
         training_wall_seconds=train_wall,
         training_forward_calls=train_compute["forward_calls"],
         training_token_positions=train_compute["token_positions"],
+        selection_validation_forward_calls=train_compute[
+            "selection_validation_forward_calls"
+        ],
+        selection_validation_token_positions=train_compute[
+            "selection_validation_token_positions"
+        ],
+        best_epoch=train_compute["best_epoch"],
+        completed_joint_epochs=train_compute["completed_joint_epochs"],
+        goal_warmup_epochs=train_compute["goal_warmup_epochs"],
         approx_training_flops=6 * model.parameter_count * train_compute["token_positions"],
         device=str(device),
         **validation,
     )
     atomic_write_json(run_dir / "history.json", history)
-    atomic_write_json(run_dir / "metrics.json", metrics)
     with (run_dir / "predictions.jsonl").open("x", encoding="utf-8") as stream:
         for row in predictions:
             stream.write(json.dumps(row, sort_keys=True) + "\n")
+    checkpoint_path = run_dir / "checkpoint.pt"
     torch.save(
         {"model": model.state_dict(), "config": config, "metrics": metrics},
-        run_dir / "checkpoint.pt",
+        checkpoint_path,
     )
+    metrics["checkpoint_reload_verified"] = verify_checkpoint_reload(
+        checkpoint_path, model, test_data, config, device
+    )
+    atomic_write_json(run_dir / "metrics.json", metrics)
+    for metric, minimum in (config.get("assertions", {}).get("minimum", {}) or {}).items():
+        if float(metrics[metric]) < float(minimum):
+            raise AssertionError(
+                f"Sanity threshold failed: {metric}={metrics[metric]} < {minimum}; "
+                f"artifacts retained in {run_dir}"
+            )
+    for metric, maximum in (config.get("assertions", {}).get("maximum", {}) or {}).items():
+        if float(metrics[metric]) > float(maximum):
+            raise AssertionError(
+                f"Sanity threshold failed: {metric}={metrics[metric]} > {maximum}; "
+                f"artifacts retained in {run_dir}"
+            )
     print(json.dumps({"run_dir": str(run_dir), **metrics}, sort_keys=True))
     return run_dir
 
@@ -403,12 +568,68 @@ def run_suite(config: dict[str, Any], output_root: Path, repository: Path) -> li
         )
         for key in numeric:
             values = [float(row[key]) for row in rows if math.isfinite(float(row[key]))]
+            if not values:
+                continue
             summary[baseline][key] = {
                 "count": len(values), "mean": mean(values),
                 "std": stdev(values) if len(values) > 1 else 0.0,
+                "ci95_half_width": (
+                    1.96 * stdev(values) / math.sqrt(len(values)) if len(values) > 1 else 0.0
+                ),
             }
     suite_dir = output_root / str(config.get("experiment", "paper1"))
-    atomic_write_json(suite_dir / "latest-suite-summary.json", summary)
+    comparisons: dict[str, dict[str, dict[str, float]]] = {}
+    rows_by_baseline_seed = {
+        baseline: {int(row["seed"]): row for row in rows}
+        for baseline, rows in grouped.items()
+    }
+    requested_comparisons = config.get("comparisons") or [
+        ["B3", "B2"], ["B5", "B3"], ["B5", "B4"],
+        ["B8", "B7"], ["B10", "B9"],
+    ]
+    for treatment, control in requested_comparisons:
+        if treatment not in rows_by_baseline_seed or control not in rows_by_baseline_seed:
+            continue
+        common_seeds = sorted(
+            set(rows_by_baseline_seed[treatment]) & set(rows_by_baseline_seed[control])
+        )
+        comparison_metrics: dict[str, dict[str, float]] = {}
+        for metric in sorted(
+            set.intersection(
+                *(set(rows_by_baseline_seed[baseline][seed]) for baseline in (treatment, control)
+                  for seed in common_seeds)
+            ) if common_seeds else set()
+        ):
+            differences = []
+            for seed in common_seeds:
+                left = rows_by_baseline_seed[treatment][seed].get(metric)
+                right = rows_by_baseline_seed[control][seed].get(metric)
+                if (
+                    isinstance(left, (int, float)) and not isinstance(left, bool)
+                    and isinstance(right, (int, float)) and not isinstance(right, bool)
+                    and math.isfinite(float(left)) and math.isfinite(float(right))
+                ):
+                    differences.append(float(left) - float(right))
+            if differences:
+                comparison_metrics[metric] = {
+                    "count": len(differences),
+                    "mean_difference": mean(differences),
+                    "std_difference": stdev(differences) if len(differences) > 1 else 0.0,
+                    "ci95_half_width": (
+                        1.96 * stdev(differences) / math.sqrt(len(differences))
+                        if len(differences) > 1 else 0.0
+                    ),
+                }
+        comparisons[f"{treatment}-minus-{control}"] = comparison_metrics
+    suite_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    suite_payload = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "config_sha256": stable_hash(config),
+        "runs": [str(path) for path in runs],
+        "groups": summary,
+        "paired_comparisons": comparisons,
+    }
+    atomic_write_json(suite_dir / f"suite-{suite_stamp}.json", suite_payload)
     return runs
 
 

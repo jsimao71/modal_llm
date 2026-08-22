@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import hashlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,7 +11,9 @@ import torch
 from torch.utils.data import Dataset
 
 
-GENERATOR_VERSION = "independent-facets-v1"
+GENERATOR_VERSION = "independent-facets-v2"
+PROMPT_FAMILIES = {"standard", "reordered", "interleaved", "paraphrase"}
+CORRUPTION_FAMILIES = {"single_flip", "late_flip", "mixed"}
 
 
 @dataclass(frozen=True)
@@ -28,11 +31,12 @@ class Vocabulary:
     DISTRACTOR_CLOSE: int = 8
     TEMPLATE_A: int = 9
     TEMPLATE_B: int = 10
-    FILLER: int = 11
+    TEMPLATE_C: int = 11
+    FILLER: int = 12
 
     @property
     def requirement_base(self) -> int:
-        return 12
+        return 13
 
     @property
     def answer_base(self) -> int:
@@ -50,7 +54,18 @@ class Vocabulary:
 
 
 class ConstraintDataset(Dataset):
-    """Deterministic tasks with late constraints, distractors, and near misses."""
+    """Deterministic tasks with split-specific prompt and corruption families."""
+
+    DEFAULT_PROMPT_FAMILY = {
+        "train": "standard",
+        "validation": "reordered",
+        "test": "interleaved",
+    }
+    DEFAULT_CORRUPTION_FAMILY = {
+        "train": "single_flip",
+        "validation": "late_flip",
+        "test": "mixed",
+    }
 
     def __init__(
         self,
@@ -62,7 +77,12 @@ class ConstraintDataset(Dataset):
         max_distractors: int = 2,
         max_filler: int = 3,
         split: str = "train",
+        prompt_family: str | None = None,
+        corruption_family: str | None = None,
+        namespace: str | None = None,
     ) -> None:
+        if split not in self.DEFAULT_PROMPT_FAMILY:
+            raise ValueError(f"Unknown split {split!r}")
         self.size = size
         self.seed = seed
         self.max_facets = max_facets
@@ -70,77 +90,172 @@ class ConstraintDataset(Dataset):
         self.max_distractors = max_distractors
         self.max_filler = max_filler
         self.split = split
+        self.namespace = namespace or split
+        if self.namespace not in self.DEFAULT_PROMPT_FAMILY:
+            raise ValueError(f"Unknown RNG namespace {self.namespace!r}")
+        self.prompt_family = prompt_family or self.DEFAULT_PROMPT_FAMILY[split]
+        self.corruption_family = corruption_family or self.DEFAULT_CORRUPTION_FAMILY[split]
+        if self.prompt_family not in PROMPT_FAMILIES:
+            raise ValueError(f"Unknown prompt family {self.prompt_family!r}")
+        if self.corruption_family not in CORRUPTION_FAMILIES:
+            raise ValueError(f"Unknown corruption family {self.corruption_family!r}")
         self.vocab = Vocabulary(max_facets)
 
     def __len__(self) -> int:
         return self.size
 
-    def _build(self, index: int, *, paraphrase: bool = False) -> dict[str, Any]:
-        split_offset = {"train": 0, "validation": 10_000_019, "test": 20_000_033}[self.split]
-        rng = random.Random(self.seed * 1_000_003 + split_offset + index)
+    def _rng(self, index: int) -> random.Random:
+        split_offset = {"train": 0, "validation": 10_000_019, "test": 20_000_033}[
+            self.namespace
+        ]
+        return random.Random(self.seed * 1_000_003 + split_offset + index)
+
+    def _requirement_block(self, facet: int, value: int) -> list[int]:
+        return [
+            self.vocab.REQ_OPEN,
+            self.vocab.requirement(facet, value),
+            self.vocab.REQ_CLOSE,
+        ]
+
+    def _distractor_block(self, facet: int, value: int) -> list[int]:
+        return [
+            self.vocab.DISTRACTOR_OPEN,
+            self.vocab.requirement(facet, 1 - value),
+            self.vocab.DISTRACTOR_CLOSE,
+        ]
+
+    def _render_prompt(
+        self,
+        rng: random.Random,
+        values: list[int],
+        order: list[int],
+        family: str,
+    ) -> list[int]:
+        if family == "paraphrase":
+            family = "reordered"
+            order = list(reversed(order))
+        template = {
+            "standard": self.vocab.TEMPLATE_A,
+            "reordered": self.vocab.TEMPLATE_B,
+            "interleaved": self.vocab.TEMPLATE_C,
+        }[family]
+        prompt = [self.vocab.TASK_BOS, template]
+        late_facet = order[-1]
+        early = order[:-1]
+        distractor_facets = [rng.randrange(len(values)) for _ in range(rng.randint(0, self.max_distractors))]
+
+        if family == "standard":
+            for facet in early:
+                prompt.extend(self._requirement_block(facet, values[facet]))
+                prompt.extend([self.vocab.FILLER] * rng.randint(0, self.max_filler))
+            for facet in distractor_facets:
+                prompt.extend(self._distractor_block(facet, values[facet]))
+                prompt.extend([self.vocab.FILLER] * rng.randint(0, self.max_filler))
+        elif family == "reordered":
+            prompt.extend([self.vocab.FILLER] * rng.randint(1, max(1, self.max_filler)))
+            for facet in reversed(early):
+                prompt.extend(self._requirement_block(facet, values[facet]))
+            for facet in reversed(distractor_facets):
+                prompt.extend([self.vocab.FILLER])
+                prompt.extend(self._distractor_block(facet, values[facet]))
+        else:  # held-out interleaving of locally conflicting blocks
+            remaining = list(distractor_facets)
+            for facet in early:
+                if remaining:
+                    distractor = remaining.pop(0)
+                    prompt.extend(self._distractor_block(distractor, values[distractor]))
+                prompt.extend([self.vocab.FILLER] * rng.randint(0, self.max_filler + 1))
+                prompt.extend(self._requirement_block(facet, values[facet]))
+            for facet in remaining:
+                prompt.extend(self._distractor_block(facet, values[facet]))
+
+        prompt.extend([self.vocab.FILLER] * rng.randint(0, self.max_filler))
+        prompt.extend(self._requirement_block(late_facet, values[late_facet]))
+        prompt.append(self.vocab.TASK_END)
+        return prompt
+
+    def _corrupt_candidate(
+        self,
+        rng: random.Random,
+        target: list[int],
+        values: list[int],
+        late_facet: int,
+        index: int,
+    ) -> tuple[list[int], str]:
+        family = self.corruption_family
+        corruption_type = family
+        if family == "mixed":
+            corruption_type = ("single_flip", "double_flip", "truncate", "wrong_end")[index % 4]
+        corrupted = list(target)
+        if corruption_type == "late_flip":
+            corrupted[late_facet] = self.vocab.answer(late_facet, 1 - values[late_facet])
+        elif corruption_type == "single_flip":
+            facet = rng.randrange(len(values))
+            corrupted[facet] = self.vocab.answer(facet, 1 - values[facet])
+        elif corruption_type == "double_flip":
+            facets = rng.sample(range(len(values)), k=min(2, len(values)))
+            for facet in facets:
+                corrupted[facet] = self.vocab.answer(facet, 1 - values[facet])
+        elif corruption_type == "truncate":
+            start = rng.randrange(len(values))
+            for facet in range(start, len(values)):
+                corrupted[facet] = self.vocab.PAD
+        elif corruption_type == "wrong_end":
+            corrupted[-1] = self.vocab.OUT_BOS
+        if corrupted == target:
+            raise AssertionError("Corruption must change the candidate")
+        return corrupted, corruption_type
+
+    def _build(self, index: int, *, prompt_family: str | None = None) -> dict[str, Any]:
+        rng = self._rng(index)
         k = rng.randint(self.min_facets, self.max_facets)
         values = [rng.randint(0, 1) for _ in range(k)]
         order = list(range(k))
         rng.shuffle(order)
-        if paraphrase:
-            order.reverse()
-
-        template = self.vocab.TEMPLATE_B if paraphrase else self.vocab.TEMPLATE_A
-        prompt = [self.vocab.TASK_BOS, template]
-        late_facet = order[-1]
-        for facet in order:
-            if facet == late_facet:
-                continue
-            prompt.extend(
-                [self.vocab.REQ_OPEN, self.vocab.requirement(facet, values[facet]), self.vocab.REQ_CLOSE]
-            )
-            prompt.extend([self.vocab.FILLER] * rng.randint(0, self.max_filler))
-
-        distractors = rng.randint(0, self.max_distractors)
-        for _ in range(distractors):
-            facet = rng.randrange(k)
-            prompt.extend(
-                [self.vocab.DISTRACTOR_OPEN,
-                 self.vocab.requirement(facet, 1 - values[facet]),
-                 self.vocab.DISTRACTOR_CLOSE]
-            )
-            prompt.extend([self.vocab.FILLER] * rng.randint(0, self.max_filler))
-
-        prompt.extend(
-            [self.vocab.REQ_OPEN,
-             self.vocab.requirement(late_facet, values[late_facet]),
-             self.vocab.REQ_CLOSE,
-             self.vocab.TASK_END]
+        family = prompt_family or self.prompt_family
+        prompt = self._render_prompt(rng, values, order, family)
+        paraphrase_rng = random.Random(self.seed * 1_000_003 + index + 40_000_087)
+        paraphrase_prompt = self._render_prompt(
+            paraphrase_rng, values, order, "paraphrase"
         )
-        target = [self.vocab.answer(i, values[i]) for i in range(k)]
+
+        target = [self.vocab.answer(facet, values[facet]) for facet in range(k)]
         target.extend([self.vocab.PAD] * (self.max_facets - k))
         target.append(self.vocab.OUT_END)
+        corrupted, corruption_type = self._corrupt_candidate(
+            rng, target, values, order[-1], index
+        )
 
-        corrupt_facet = rng.randrange(k)
-        corrupted = list(target)
-        corrupted[corrupt_facet] = self.vocab.answer(corrupt_facet, 1 - values[corrupt_facet])
-        active = [1.0 if i < k else 0.0 for i in range(self.max_facets)]
-        bits = [float(values[i]) if i < k else 0.0 for i in range(self.max_facets)]
-        corrupt_satisfaction = [1.0 if i < k else 0.0 for i in range(self.max_facets)]
-        corrupt_satisfaction[corrupt_facet] = 0.0
+        active = [1.0 if facet < k else 0.0 for facet in range(self.max_facets)]
+        bits = [float(values[facet]) if facet < k else 0.0 for facet in range(self.max_facets)]
+        corrupt_satisfaction = [
+            float(corrupted[facet] == target[facet]) if facet < k else 0.0
+            for facet in range(self.max_facets)
+        ]
+
+        counterfactual_facet = rng.randrange(k)
         counterfactual_prompt = list(prompt)
-        original_requirement = self.vocab.requirement(corrupt_facet, values[corrupt_facet])
-        replacement_requirement = self.vocab.requirement(corrupt_facet, 1 - values[corrupt_facet])
+        original = self.vocab.requirement(counterfactual_facet, values[counterfactual_facet])
+        replacement = self.vocab.requirement(counterfactual_facet, 1 - values[counterfactual_facet])
         for position in range(1, len(counterfactual_prompt) - 1):
             if (
                 counterfactual_prompt[position - 1] == self.vocab.REQ_OPEN
-                and counterfactual_prompt[position] == original_requirement
+                and counterfactual_prompt[position] == original
                 and counterfactual_prompt[position + 1] == self.vocab.REQ_CLOSE
             ):
-                counterfactual_prompt[position] = replacement_requirement
+                counterfactual_prompt[position] = replacement
                 break
+        else:
+            raise AssertionError("Authoritative counterfactual facet not found")
         counterfactual_target = list(target)
-        counterfactual_target[corrupt_facet] = self.vocab.answer(
-            corrupt_facet, 1 - values[corrupt_facet]
+        counterfactual_target[counterfactual_facet] = self.vocab.answer(
+            counterfactual_facet, 1 - values[counterfactual_facet]
         )
+
         return {
             "id": f"{self.split}-{index}",
             "prompt": torch.tensor(prompt, dtype=torch.long),
+            "paraphrase_prompt": torch.tensor(paraphrase_prompt, dtype=torch.long),
             "target": torch.tensor(target, dtype=torch.long),
             "corrupted": torch.tensor(corrupted, dtype=torch.long),
             "counterfactual_prompt": torch.tensor(counterfactual_prompt, dtype=torch.long),
@@ -148,7 +263,8 @@ class ConstraintDataset(Dataset):
             "bits": torch.tensor(bits),
             "active_facets": torch.tensor(active),
             "corrupt_satisfaction": torch.tensor(corrupt_satisfaction),
-            "corrupt_facet": corrupt_facet,
+            "corrupt_facet": counterfactual_facet,
+            "corruption_type": corruption_type,
             "facet_count": k,
         }
 
@@ -156,33 +272,59 @@ class ConstraintDataset(Dataset):
         return self._build(index)
 
     def paraphrase(self, index: int) -> torch.Tensor:
-        return self._build(index, paraphrase=True)["prompt"]
+        return self[index]["paraphrase_prompt"]
 
     def manifest(self) -> dict[str, Any]:
         return {
             "generator": GENERATOR_VERSION,
             "split": self.split,
+            "namespace": self.namespace,
             "seed": self.seed,
             "size": self.size,
+            "prompt_family": self.prompt_family,
+            "corruption_family": self.corruption_family,
             "max_facets": self.max_facets,
             "min_facets": self.min_facets,
             "max_distractors": self.max_distractors,
             "max_filler": self.max_filler,
         }
 
+    def content_hash(self) -> str:
+        """Hash materialized prompts, labels, and corruption identities in index order."""
+
+        digest = hashlib.sha256()
+        digest.update(repr(sorted(self.manifest().items())).encode("utf-8"))
+        for index in range(len(self)):
+            row = self[index]
+            for key in (
+                "prompt", "paraphrase_prompt", "target", "corrupted", "counterfactual_prompt"
+            ):
+                tensor = row[key].contiguous()
+                digest.update(len(tensor).to_bytes(4, "little"))
+                digest.update(tensor.numpy().tobytes())
+            digest.update(row["corruption_type"].encode("ascii"))
+        return digest.hexdigest()
+
 
 def collate_examples(rows: list[dict[str, Any]]) -> dict[str, Any]:
     width = max(row["prompt"].numel() for row in rows)
+    paraphrase_width = max(row["paraphrase_prompt"].numel() for row in rows)
     prompts = torch.zeros((len(rows), width), dtype=torch.long)
+    paraphrase_prompts = torch.zeros((len(rows), paraphrase_width), dtype=torch.long)
     counterfactual_prompts = torch.zeros((len(rows), width), dtype=torch.long)
     for index, row in enumerate(rows):
         prompts[index, : row["prompt"].numel()] = row["prompt"]
+        paraphrase_prompts[index, : row["paraphrase_prompt"].numel()] = row[
+            "paraphrase_prompt"
+        ]
         counterfactual_prompts[index, : row["counterfactual_prompt"].numel()] = row[
             "counterfactual_prompt"
         ]
     return {
         "ids": [row["id"] for row in rows],
+        "corruption_types": [row["corruption_type"] for row in rows],
         "prompt": prompts,
+        "paraphrase_prompt": paraphrase_prompts,
         "target": torch.stack([row["target"] for row in rows]),
         "corrupted": torch.stack([row["corrupted"] for row in rows]),
         "counterfactual_prompt": counterfactual_prompts,

@@ -1,0 +1,31 @@
+experiment: paper1-pilot
+baselines: [B0, B5, B10]
+seeds: [0]
+device: auto
+model:
+  d_model: 48
+  nhead: 4
+  layers: 2
+  ff_mult: 3
+  dropout: 0.1
+  max_length: 128
+data:
+  train_size: 1024
+  validation_size: 256
+  test_size: 256
+  min_facets: 2
+  max_facets: 6
+  max_distractors: 4
+  max_filler: 5
+  prompt_families: {train: standard, validation: reordered, test: interleaved}
+  corruption_families: {train: single_flip, validation: late_flip, test: mixed}
+training:
+  epochs: 40
+  log_every: 5
+  batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.01
+  grad_clip: 1.0
+  loss_weights: {lm: 1.0, goal: 0.2, validation: 0.5, ranking: 0.2, facet: 0.2}
+evaluation:
+  batch_size: 256

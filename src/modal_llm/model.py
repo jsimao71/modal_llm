@@ -26,6 +26,16 @@ class BaselineSpec:
     matched_mlp: bool = False
 
 
+@dataclass(frozen=True)
+class GenerationContext:
+    """Prompt-side state computed once and latched for autoregressive decoding."""
+
+    prefix: torch.Tensor
+    prompt_padding: torch.Tensor
+    goal: torch.Tensor | None
+    conditioning: torch.Tensor | None
+
+
 BASELINES = {
     "B0": BaselineSpec("B0", None, False, False, None, False, None),
     "B1": BaselineSpec("B1", None, False, False, None, False, None, True),
@@ -108,6 +118,28 @@ class ModeTransformer(nn.Module):
     def parameter_count(self) -> int:
         return sum(parameter.numel() for parameter in self.parameters())
 
+    @property
+    def active_parameter_count(self) -> int:
+        modules: list[nn.Module] = [
+            self.token_embedding,
+            self.position_embedding,
+            self.mode_embedding,
+            self.transformer,
+            self.lm_head,
+        ]
+        if self.spec.matched_mlp:
+            modules.append(self.match_control)
+        if self.spec.use_goal:
+            modules.extend([self.goal_head, self.goal_condition, self.facet_head])
+        if self.spec.review is not None:
+            modules.append(self.review_head)
+        if self.spec.validator is not None:
+            modules.extend([self.validator_body, self.validator_score, self.validator_facets])
+        if self.spec.validator == "reread":
+            modules.append(self.goal_head)
+        unique = {id(parameter): parameter for module in modules for parameter in module.parameters()}
+        return sum(parameter.numel() for parameter in unique.values())
+
     def _embeddings(self, ids: torch.Tensor, mode: str, *, offset: int = 0) -> torch.Tensor:
         positions = torch.arange(offset, offset + ids.shape[1], device=ids.device)
         return (
@@ -145,13 +177,14 @@ class ModeTransformer(nn.Module):
         goal = self.goal_head(self._mean(hidden, padding))
         return hidden, goal
 
-    def generation_forward(
+    def prepare_generation(
         self,
         prompt: torch.Tensor,
-        decoder_input: torch.Tensor,
         *,
         forced_goal: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
+    ) -> GenerationContext:
+        """Compute prompt features and latch goal conditioning exactly once."""
+
         prompt_padding = prompt.eq(self.vocab.PAD)
         goal = None
         if self.spec.encode_mask is not None:
@@ -162,20 +195,34 @@ class ModeTransformer(nn.Module):
                 prefix = self._embeddings(prompt, "generate")
         else:
             prefix = self._embeddings(prompt, "generate")
+        effective_goal = forced_goal if forced_goal is not None else goal
+        conditioning = None
+        if self.spec.use_goal and effective_goal is not None:
+            conditioning = self.goal_condition(effective_goal).unsqueeze(1)
+            prefix = prefix + conditioning
+        return GenerationContext(prefix, prompt_padding, goal, conditioning)
 
+    def generation_forward(
+        self,
+        prompt: torch.Tensor,
+        decoder_input: torch.Tensor,
+        *,
+        forced_goal: torch.Tensor | None = None,
+        context: GenerationContext | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
+        if context is not None and forced_goal is not None:
+            raise ValueError("Pass forced_goal when preparing context, not with an existing context")
+        context = context or self.prepare_generation(prompt, forced_goal=forced_goal)
         suffix = self._embeddings(decoder_input, "generate", offset=prompt.shape[1])
         if self.spec.matched_mlp:
             suffix = suffix + self.match_control(suffix)
-        effective_goal = forced_goal if forced_goal is not None else goal
-        if self.spec.use_goal and effective_goal is not None:
-            conditioned = self.goal_condition(effective_goal).unsqueeze(1)
-            prefix = prefix + conditioned
-            suffix = suffix + conditioned
-        embeddings = torch.cat([prefix, suffix], dim=1)
-        padding = torch.cat([prompt_padding, decoder_input.eq(self.vocab.PAD)], dim=1)
+        if context.conditioning is not None:
+            suffix = suffix + context.conditioning
+        embeddings = torch.cat([context.prefix, suffix], dim=1)
+        padding = torch.cat([context.prompt_padding, decoder_input.eq(self.vocab.PAD)], dim=1)
         hidden = self._run(embeddings, padding, causal=True)
         generated_hidden = hidden[:, prompt.shape[1] :, :]
-        return self.lm_head(generated_hidden), goal, generated_hidden
+        return self.lm_head(generated_hidden), context.goal, generated_hidden
 
     def generate(
         self,
@@ -187,13 +234,13 @@ class ModeTransformer(nn.Module):
         decoder = torch.full(
             (prompt.shape[0], 1), self.vocab.OUT_BOS, dtype=torch.long, device=prompt.device
         )
-        goal = None
-        calls = 0
+        before = self.compute_stats()["forward_calls"]
+        context = self.prepare_generation(prompt, forced_goal=forced_goal)
         for _ in range(max_tokens):
-            logits, goal, _ = self.generation_forward(prompt, decoder, forced_goal=forced_goal)
+            logits, _, _ = self.generation_forward(prompt, decoder, context=context)
             decoder = torch.cat([decoder, logits[:, -1].argmax(-1, keepdim=True)], dim=1)
-            calls += 1 + int(self.spec.encode_mask is not None)
-        return decoder[:, 1:], goal, calls
+        calls = self.compute_stats()["forward_calls"] - before
+        return decoder[:, 1:], context.goal, calls
 
     def _review_representations(
         self, prompt: torch.Tensor, candidate: torch.Tensor
@@ -244,6 +291,40 @@ class ModeTransformer(nn.Module):
         hidden = self.validator_body(features)
         return self.validator_score(hidden).squeeze(-1), self.validator_facets(hidden)
 
+    def _goal_losses(
+        self,
+        goal: torch.Tensor,
+        batch: dict[str, torch.Tensor],
+        invariance_weight: float,
+    ) -> dict[str, torch.Tensor]:
+        raw = F.binary_cross_entropy_with_logits(
+            self.facet_head(goal), batch["bits"], reduction="none"
+        )
+        facet = (raw * batch["active_facets"]).sum() / batch["active_facets"].sum()
+        result = {"goal": facet}
+        if invariance_weight > 0:
+            _, paraphrase_goal = self.encode(batch["paraphrase_prompt"])
+            invariance = (
+                1.0 - F.cosine_similarity(goal, paraphrase_goal, dim=-1)
+            ).mean()
+            result["goal_invariance"] = invariance
+        return result
+
+    def goal_objective(
+        self,
+        batch: dict[str, torch.Tensor],
+        *,
+        invariance_weight: float = 0.0,
+    ) -> dict[str, torch.Tensor]:
+        if not self.spec.use_goal:
+            raise RuntimeError(f"{self.spec.name} does not use a goal state")
+        _, goal = self.encode(batch["prompt"])
+        losses = self._goal_losses(goal, batch, invariance_weight)
+        total = losses["goal"] + invariance_weight * losses.get(
+            "goal_invariance", goal.new_zeros(())
+        )
+        return {**losses, "total": total}
+
     def losses(self, batch: dict[str, torch.Tensor], weights: dict[str, float]) -> dict[str, torch.Tensor]:
         target = batch["target"]
         decoder_input = torch.cat(
@@ -257,12 +338,15 @@ class ModeTransformer(nn.Module):
         result = {"lm": lm}
 
         if self.spec.use_goal and goal is not None:
-            raw = F.binary_cross_entropy_with_logits(
-                self.facet_head(goal), batch["bits"], reduction="none"
+            goal_losses = self._goal_losses(
+                goal, batch, float(weights.get("goal_invariance", 0.0))
             )
-            goal_loss = (raw * batch["active_facets"]).sum() / batch["active_facets"].sum()
-            total = total + weights.get("goal", 0.2) * goal_loss
-            result["goal"] = goal_loss
+            total = total + weights.get("goal", 0.2) * goal_losses["goal"]
+            if "goal_invariance" in goal_losses:
+                total = total + weights.get("goal_invariance", 0.0) * goal_losses[
+                    "goal_invariance"
+                ]
+            result.update(goal_losses)
 
         if self.spec.validator is not None:
             positive, positive_facets = self.validation_logits(batch["prompt"], target, goal)

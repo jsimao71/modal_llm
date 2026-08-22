@@ -1,0 +1,50 @@
+experiment: paper1-overfit
+baseline: B0
+seed: 0
+device: cpu
+model:
+  d_model: 32
+  nhead: 4
+  layers: 1
+  ff_mult: 2
+  dropout: 0.0
+  max_length: 96
+data:
+  train_size: 32
+  validation_size: 32
+  test_size: 32
+  min_facets: 2
+  max_facets: 4
+  max_distractors: 2
+  max_filler: 2
+  namespaces:
+    train: train
+    validation: train
+    test: train
+  prompt_families:
+    train: standard
+    validation: standard
+    test: standard
+  corruption_families:
+    train: single_flip
+    validation: single_flip
+    test: single_flip
+training:
+  epochs: 100
+  validation_every: 10
+  log_every: 10
+  batch_size: 32
+  learning_rate: 0.01
+  weight_decay: 0.0
+  grad_clip: 1.0
+  loss_weights:
+    lm: 1.0
+    goal: 0.2
+    validation: 0.5
+    ranking: 0.2
+    facet: 0.2
+evaluation:
+  batch_size: 32
+assertions:
+  minimum:
+    task_exact_match: 0.95

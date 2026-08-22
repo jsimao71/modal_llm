@@ -17,7 +17,12 @@ data:
   max_facets: 6
   max_distractors: 4
   max_filler: 6
+  prompt_families: {train: standard, validation: reordered, test: interleaved}
+  corruption_families: {train: single_flip, validation: late_flip, test: mixed}
 training:
+  goal_warmup_epochs: 10
+  validation_every: 1
+  early_stopping_patience: 5
   epochs: 12
   batch_size: 128
   learning_rate: 0.0003
@@ -26,6 +31,7 @@ training:
   loss_weights:
     lm: 1.0
     goal: 0.2
+    goal_invariance: 0.2
     validation: 0.5
     ranking: 0.2
     facet: 0.2

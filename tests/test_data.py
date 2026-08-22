@@ -16,3 +16,32 @@ def test_collate_pads_only_prompts():
     batch = collate_examples([dataset[0], dataset[1]])
     assert batch["prompt"].shape[0] == 2
     assert batch["target"].shape == (2, dataset.max_facets + 1)
+
+
+def test_splits_use_held_out_prompt_and_corruption_families():
+    train = ConstraintDataset(8, seed=3, split="train")
+    validation = ConstraintDataset(8, seed=3, split="validation")
+    test = ConstraintDataset(8, seed=3, split="test")
+    assert {train.prompt_family, validation.prompt_family, test.prompt_family} == {
+        "standard", "reordered", "interleaved"
+    }
+    assert {train.corruption_family, validation.corruption_family, test.corruption_family} == {
+        "single_flip", "late_flip", "mixed"
+    }
+    assert {test[index]["corruption_type"] for index in range(8)} == {
+        "single_flip", "double_flip", "truncate", "wrong_end"
+    }
+
+
+def test_counterfactual_changes_one_authoritative_requirement_and_target():
+    row = ConstraintDataset(4, seed=11, split="test")[0]
+    assert int(row["prompt"].ne(row["counterfactual_prompt"]).sum()) == 1
+    assert int(row["target"].ne(row["counterfactual_target"]).sum()) == 1
+
+
+def test_dataset_content_hash_is_stable_and_split_sensitive():
+    first = ConstraintDataset(4, seed=13, split="train")
+    same = ConstraintDataset(4, seed=13, split="train")
+    held_out = ConstraintDataset(4, seed=13, split="test")
+    assert first.content_hash() == same.content_hash()
+    assert first.content_hash() != held_out.content_hash()

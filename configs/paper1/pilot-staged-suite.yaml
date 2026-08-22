@@ -1,36 +1,37 @@
-experiment: paper1-baselines
-baselines: [B0, B1, B2, B3, B4, B5, B6, B7, B8, B9, B10]
-seeds: [0, 1, 2, 3, 4]
+experiment: paper1-pilot-staged
+baselines: [B5, B10]
+seeds: [0]
 device: auto
 model:
-  d_model: 128
-  nhead: 8
-  layers: 4
-  ff_mult: 4
+  d_model: 48
+  nhead: 4
+  layers: 2
+  ff_mult: 3
   dropout: 0.1
   max_length: 128
 data:
-  train_size: 20000
-  validation_size: 2000
-  test_size: 4000
+  train_size: 1024
+  validation_size: 256
+  test_size: 256
   min_facets: 2
   max_facets: 6
   max_distractors: 4
-  max_filler: 6
+  max_filler: 5
   prompt_families: {train: standard, validation: reordered, test: interleaved}
   corruption_families: {train: single_flip, validation: late_flip, test: mixed}
 training:
-  goal_warmup_epochs: 10
-  validation_every: 1
-  early_stopping_patience: 5
-  epochs: 12
+  goal_warmup_epochs: 15
+  epochs: 60
+  validation_every: 5
+  early_stopping_patience: 4
+  log_every: 5
   batch_size: 128
-  learning_rate: 0.0003
+  learning_rate: 0.001
   weight_decay: 0.01
   grad_clip: 1.0
   loss_weights:
     lm: 1.0
-    goal: 0.2
+    goal: 0.3
     goal_invariance: 0.2
     validation: 0.5
     ranking: 0.2

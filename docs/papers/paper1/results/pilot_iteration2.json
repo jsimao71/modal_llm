@@ -1,0 +1,32 @@
+{
+  "status": "one-seed implementation diagnostic; not a headline result",
+  "seed": 0,
+  "generator_version": "independent-facets-v2",
+  "held_out_design": {
+    "train_prompt_family": "standard",
+    "validation_prompt_family": "reordered",
+    "test_prompt_family": "interleaved",
+    "train_corruption_family": "single_flip",
+    "validation_corruption_family": "late_flip",
+    "test_corruption_family": "mixed"
+  },
+  "memorization_gate": [
+    {"baseline": "B0", "optimizer_updates": 100, "exact_match": 1.0, "facet_satisfaction": 1.0, "checkpoint_reload_verified": true},
+    {"baseline": "B5", "optimizer_updates": 250, "exact_match": 1.0, "facet_satisfaction": 1.0, "checkpoint_reload_verified": true},
+    {"baseline": "B10", "optimizer_updates": 250, "exact_match": 1.0, "facet_satisfaction": 1.0, "validator_auroc": 1.0, "checkpoint_reload_verified": true}
+  ],
+  "held_out_pilot": [
+    {"protocol": "unstaged", "baseline": "B0", "exact_match": 0.4296875, "facet_satisfaction": 0.7973307328065857, "checkpoint_reload_verified": true},
+    {"protocol": "unstaged", "baseline": "B5", "exact_match": 0.109375, "facet_satisfaction": 0.5530599014600739, "zero_goal_effect": 0.01953125, "shuffled_goal_effect": 0.0, "checkpoint_reload_verified": true},
+    {"protocol": "unstaged", "baseline": "B10", "exact_match": 0.1015625, "facet_satisfaction": 0.5386718807276338, "zero_goal_effect": -0.00390625, "shuffled_goal_effect": 0.0, "validator_auroc": 0.4758453369140625, "validator_ranking_accuracy": 0.47265625, "checkpoint_reload_verified": true},
+    {"protocol": "staged", "baseline": "B5", "exact_match": 0.16796875, "facet_satisfaction": 0.6037760474719107, "zero_goal_effect": 0.08984375, "shuffled_goal_effect": 0.00390625, "best_epoch": 40, "checkpoint_reload_verified": true},
+    {"protocol": "staged", "baseline": "B10", "exact_match": 0.15625, "facet_satisfaction": 0.6009114644257352, "zero_goal_effect": 0.03125, "shuffled_goal_effect": -0.015625, "validator_auroc": 0.5750274658203125, "validator_ranking_accuracy": 0.63671875, "best_epoch": 50, "checkpoint_reload_verified": true}
+  ],
+  "interpretation": [
+    "All three representative architectures pass the shared-example memorization gate.",
+    "On held-out prompt topologies, the staged mode-state variants remain below the causal B0 baseline.",
+    "Goal zeroing has a measurable effect after staging, but shuffling does not consistently hurt, so the latent is not yet reliably example-specific.",
+    "The staged B10 validator rises above chance but remains too weak for a positive claim.",
+    "Run multiple seeds only after the conditioning and validator objectives pass stronger causal gates."
+  ]
+}
