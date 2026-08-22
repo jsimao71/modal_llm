@@ -39,6 +39,20 @@ shared-example memorization gate and the genuinely held-out pilot. These numbers
 used to reject weak training configurations, not as evidence for the paper's headline
 hypotheses.
 
+## Next iteration: Z-only causal gate
+
+```powershell
+modal-llm train-eval --config configs/paper1/z-only-gate.yaml
+```
+
+This configuration removes token-level goal access from the generator by using the
+separate `generation_prompt` content channel together with `goal_prompt` encoding and
+latched `Z_G` conditioning. The run reports correct-, shuffled-, zero-, constant-, and
+random-goal interventions, plus frozen-goal linear and MLP probes over held-out facet
+labels. Treat this as the first go/no-go gate for the next iteration: do not start the
+depth/time sweep or the five-seed baseline suite unless correct-$Z$ clearly beats
+shuffled-$Z$ on held-out tasks and the probes show strong goal decodability.
+
 ## Main model and five-seed baseline suite
 
 ```powershell

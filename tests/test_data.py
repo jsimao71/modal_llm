@@ -16,6 +16,16 @@ def test_collate_pads_only_prompts():
     batch = collate_examples([dataset[0], dataset[1]])
     assert batch["prompt"].shape[0] == 2
     assert batch["target"].shape == (2, dataset.max_facets + 1)
+    assert batch["generation_prompt"].shape[0] == 2
+    assert batch["goal_prompt"].shape[0] == 2
+
+
+def test_examples_expose_separate_generation_and_goal_prompts():
+    row = ConstraintDataset(4, seed=5, split="train")[0]
+    assert row["generation_prompt"].numel() < row["prompt"].numel()
+    assert row["goal_prompt"].numel() <= row["prompt"].numel()
+    assert not torch.equal(row["generation_prompt"], row["goal_prompt"])
+    assert int(row["goal_prompt"].ne(row["counterfactual_goal_prompt"]).sum()) == 1
 
 
 def test_splits_use_held_out_prompt_and_corruption_families():

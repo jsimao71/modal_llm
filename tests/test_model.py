@@ -79,6 +79,31 @@ def test_cached_generation_context_matches_fresh_forward_and_avoids_reencoding()
     assert model.compute_stats()["forward_calls"] == 4  # one encode plus three decode passes
 
 
+def test_generation_prompt_only_uses_content_prefix_with_goal_encoding():
+    dataset, batch = _batch()
+    model = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=1,
+        dropout=0.0,
+        generation_prompt_only=True,
+    ).eval()
+    context = model.prepare_generation(
+        batch["generation_prompt"], goal_prompt=batch["goal_prompt"]
+    )
+    assert context.prefix_length == batch["generation_prompt"].shape[1]
+    generated, goal, calls = model.generate(
+        batch["generation_prompt"],
+        max_tokens=3,
+        goal_prompt=batch["goal_prompt"],
+    )
+    assert generated.shape == (2, 3)
+    assert goal is not None
+    assert calls == 4
+
+
 def test_seeded_initialization_and_optimizer_step_are_deterministic():
     dataset, batch = _batch()
 

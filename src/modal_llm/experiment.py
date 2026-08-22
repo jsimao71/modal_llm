@@ -17,13 +17,28 @@ import torch
 import yaml
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
-from torch.nn.utils.rnn import pad_sequence
 
 from .common import atomic_write_json, capture_provenance, seed_everything
 from .common.reproducibility import stable_hash
 from .data import ConstraintDataset, collate_examples
 from .metrics import average_precision, binary_auroc, brier_score, expected_calibration_error
 from .model import BASELINES, ModeTransformer
+
+
+def _goal_prompt(batch: dict[str, Any]) -> torch.Tensor:
+    return batch.get("goal_prompt", batch["prompt"])
+
+
+def _generation_prompt(batch: dict[str, Any]) -> torch.Tensor:
+    return batch.get("generation_prompt", batch["prompt"])
+
+
+def _paraphrase_goal_prompt(batch: dict[str, Any]) -> torch.Tensor:
+    return batch.get("paraphrase_goal_prompt", batch.get("paraphrase_prompt", batch["prompt"]))
+
+
+def _counterfactual_goal_prompt(batch: dict[str, Any]) -> torch.Tensor:
+    return batch.get("counterfactual_goal_prompt", batch.get("counterfactual_prompt", batch["prompt"]))
 
 
 def _device(name: str) -> torch.device:
@@ -64,7 +79,125 @@ def _model(config: dict[str, Any], dataset: ConstraintDataset) -> ModeTransforme
         layers=int(values.get("layers", 2)), ff_mult=int(values.get("ff_mult", 4)),
         dropout=float(values.get("dropout", 0.1)),
         max_length=int(values.get("max_length", 128)),
+        generation_prompt_only=bool(values.get("generation_prompt_only", False)),
     )
+
+
+@torch.no_grad()
+def _collect_goal_states(
+    model: ModeTransformer,
+    dataset: ConstraintDataset,
+    batch_size: int,
+    device: torch.device,
+) -> dict[str, torch.Tensor]:
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_examples)
+    model.eval()
+    states: list[torch.Tensor] = []
+    bits: list[torch.Tensor] = []
+    active: list[torch.Tensor] = []
+    for raw in loader:
+        batch = _move(raw, device)
+        _, goal = model.encode(_goal_prompt(batch))
+        assert goal is not None
+        states.append(goal.detach().cpu())
+        bits.append(batch["bits"].detach().cpu())
+        active.append(batch["active_facets"].detach().cpu())
+    return {
+        "goal": torch.cat(states, dim=0),
+        "bits": torch.cat(bits, dim=0),
+        "active_facets": torch.cat(active, dim=0),
+    }
+
+
+def _probe_metrics(
+    logits: torch.Tensor,
+    bits: torch.Tensor,
+    active: torch.Tensor,
+) -> dict[str, float]:
+    predictions = (logits.sigmoid() >= 0.5).to(bits.dtype)
+    mask = active > 0
+    correct = (predictions == bits) | ~mask
+    denominator = float(mask.sum().item())
+    facet_accuracy = float(((predictions == bits) & mask).sum().item() / denominator) if denominator else math.nan
+    joint_exact = float(correct.all(dim=1).float().mean().item())
+    return {
+        "facet_accuracy": facet_accuracy,
+        "joint_exact_match": joint_exact,
+    }
+
+
+def _train_goal_probe(
+    train: dict[str, torch.Tensor],
+    validation: dict[str, torch.Tensor],
+    test: dict[str, torch.Tensor],
+    *,
+    hidden_width: int | None,
+    device: torch.device,
+    epochs: int,
+    learning_rate: float,
+    weight_decay: float,
+) -> dict[str, float]:
+    input_width = train["goal"].shape[1]
+    output_width = train["bits"].shape[1]
+    if hidden_width is None:
+        probe = torch.nn.Linear(input_width, output_width)
+    else:
+        probe = torch.nn.Sequential(
+            torch.nn.Linear(input_width, hidden_width),
+            torch.nn.GELU(),
+            torch.nn.Linear(hidden_width, output_width),
+        )
+    probe = probe.to(device)
+    optimizer = torch.optim.AdamW(
+        probe.parameters(), lr=learning_rate, weight_decay=weight_decay
+    )
+    best_state: dict[str, torch.Tensor] | None = None
+    best_value = math.inf
+    for _ in range(epochs):
+        probe.train()
+        optimizer.zero_grad(set_to_none=True)
+        logits = probe(train["goal"].to(device))
+        raw = torch.nn.functional.binary_cross_entropy_with_logits(
+            logits, train["bits"].to(device), reduction="none"
+        )
+        loss = (raw * train["active_facets"].to(device)).sum() / train["active_facets"].to(device).sum()
+        loss.backward()
+        optimizer.step()
+
+        probe.eval()
+        with torch.no_grad():
+            validation_logits = probe(validation["goal"].to(device))
+            raw_validation = torch.nn.functional.binary_cross_entropy_with_logits(
+                validation_logits, validation["bits"].to(device), reduction="none"
+            )
+            validation_loss = (
+                (raw_validation * validation["active_facets"].to(device)).sum()
+                / validation["active_facets"].to(device).sum()
+            )
+        if float(validation_loss) < best_value:
+            best_value = float(validation_loss)
+            best_state = {
+                name: value.detach().cpu().clone()
+                for name, value in probe.state_dict().items()
+            }
+    assert best_state is not None
+    probe.load_state_dict(best_state)
+    probe.eval()
+    with torch.no_grad():
+        train_logits = probe(train["goal"].to(device)).cpu()
+        validation_logits = probe(validation["goal"].to(device)).cpu()
+        test_logits = probe(test["goal"].to(device)).cpu()
+    metrics = {}
+    for split_name, logits, values in (
+        ("train", train_logits, train),
+        ("validation", validation_logits, validation),
+        ("test", test_logits, test),
+    ):
+        for metric_name, metric_value in _probe_metrics(
+            logits, values["bits"], values["active_facets"]
+        ).items():
+            metrics[f"{split_name}_{metric_name}"] = metric_value
+    return metrics
 
 
 def train(
@@ -214,6 +347,49 @@ def validation_losses(
     return {f"validation_{key}": mean(values) for key, values in totals.items()}
 
 
+def evaluate_goal_probes(
+    model: ModeTransformer,
+    train_dataset: ConstraintDataset,
+    validation_dataset: ConstraintDataset,
+    test_dataset: ConstraintDataset,
+    config: dict[str, Any],
+    device: torch.device,
+) -> dict[str, float]:
+    if not model.spec.use_goal:
+        return {}
+    probe_config = (
+        config.get("evaluation", {}).get("goal_probe")
+        or {"enabled": True, "epochs": 200, "learning_rate": 1e-2, "weight_decay": 1e-4}
+    )
+    if not probe_config.get("enabled", True):
+        return {}
+    batch_size = int(probe_config.get("batch_size", config["evaluation"].get("batch_size", 64)))
+    train_states = _collect_goal_states(model, train_dataset, batch_size, device)
+    validation_states = _collect_goal_states(model, validation_dataset, batch_size, device)
+    test_states = _collect_goal_states(model, test_dataset, batch_size, device)
+    common = {
+        "device": device,
+        "epochs": int(probe_config.get("epochs", 200)),
+        "learning_rate": float(probe_config.get("learning_rate", 1e-2)),
+        "weight_decay": float(probe_config.get("weight_decay", 1e-4)),
+    }
+    linear = _train_goal_probe(
+        train_states, validation_states, test_states, hidden_width=None, **common
+    )
+    mlp = _train_goal_probe(
+        train_states,
+        validation_states,
+        test_states,
+        hidden_width=int(probe_config.get("mlp_hidden", 64)),
+        **common,
+    )
+    metrics = {}
+    for prefix, values in (("goal_probe_linear", linear), ("goal_probe_mlp", mlp)):
+        for name, value in values.items():
+            metrics[f"{prefix}_{name}"] = value
+    return metrics
+
+
 @torch.no_grad()
 def evaluate(
     model: ModeTransformer,
@@ -236,6 +412,8 @@ def evaluate(
     )
     zero_exact: list[float] = []
     shuffle_exact: list[float] = []
+    constant_exact: list[float] = []
+    random_exact: list[float] = []
     paraphrase_goal_exact: list[float] = []
     facet_substitution_success: list[float] = []
     no_mode_exact: list[float] = []
@@ -248,10 +426,15 @@ def evaluate(
     validation_calls = validation_positions = 0
     model.reset_compute_stats()
     started = time.perf_counter()
+    constant_goal: torch.Tensor | None = None
     for raw in loader:
         batch = _move(raw, device)
+        generation_prompt = _generation_prompt(batch)
+        goal_prompt = _goal_prompt(batch)
         before_base = model.compute_stats()
-        generated, goal, _ = model.generate(batch["prompt"], batch["target"].shape[1])
+        generated, goal, _ = model.generate(
+            generation_prompt, batch["target"].shape[1], goal_prompt=goal_prompt
+        )
         after_base = model.compute_stats()
         base_calls += after_base["forward_calls"] - before_base["forward_calls"]
         base_positions += after_base["token_positions"] - before_base["token_positions"]
@@ -267,11 +450,22 @@ def evaluate(
         if model.spec.use_goal and goal is not None:
             zeros = torch.zeros_like(goal)
             zero_generated, _, zero_calls = model.generate(
-                batch["prompt"], batch["target"].shape[1], forced_goal=zeros
+                generation_prompt, batch["target"].shape[1], forced_goal=zeros
             )
             shuffled = goal.roll(1, 0)
             shuffled_generated, _, shuffle_calls = model.generate(
-                batch["prompt"], batch["target"].shape[1], forced_goal=shuffled
+                generation_prompt, batch["target"].shape[1], forced_goal=shuffled
+            )
+            if constant_goal is None:
+                constant_goal = goal[:1].detach().clone()
+            constant = constant_goal.expand_as(goal)
+            constant_generated, _, _ = model.generate(
+                generation_prompt, batch["target"].shape[1], forced_goal=constant
+            )
+            noise_scale = goal.std(dim=0, unbiased=False).mean().clamp_min(1e-3)
+            random_goal = torch.randn_like(goal) * noise_scale
+            random_generated, _, _ = model.generate(
+                generation_prompt, batch["target"].shape[1], forced_goal=random_goal
             )
             zero_ok = zero_generated[:, : model.vocab.max_facets].eq(
                 batch["target"][:, : model.vocab.max_facets]
@@ -279,14 +473,18 @@ def evaluate(
             shuffle_ok = shuffled_generated[:, : model.vocab.max_facets].eq(
                 batch["target"][:, : model.vocab.max_facets]
             )
+            constant_ok = constant_generated[:, : model.vocab.max_facets].eq(
+                batch["target"][:, : model.vocab.max_facets]
+            )
+            random_ok = random_generated[:, : model.vocab.max_facets].eq(
+                batch["target"][:, : model.vocab.max_facets]
+            )
             zero_exact.extend((zero_ok | ~active).all(1).float().cpu().tolist())
             shuffle_exact.extend((shuffle_ok | ~active).all(1).float().cpu().tolist())
-            indices = [int(example_id.rsplit("-", 1)[1]) for example_id in raw["ids"]]
-            paraphrases = pad_sequence(
-                [dataset.paraphrase(index) for index in indices], batch_first=True,
-                padding_value=dataset.vocab.PAD,
-            ).to(device)
-            _, paraphrase_goal = model.encode(paraphrases)
+            constant_exact.extend((constant_ok | ~active).all(1).float().cpu().tolist())
+            random_exact.extend((random_ok | ~active).all(1).float().cpu().tolist())
+            paraphrase_goals = _paraphrase_goal_prompt(batch)
+            _, paraphrase_goal = model.encode(paraphrase_goals)
             paraphrase_similarity.extend(
                 torch.nn.functional.cosine_similarity(goal, paraphrase_goal).cpu().tolist()
             )
@@ -295,16 +493,16 @@ def evaluate(
                     torch.nn.functional.cosine_similarity(goal, goal.roll(1, 0)).cpu().tolist()
                 )
             paraphrase_generated, _, _ = model.generate(
-                batch["prompt"], batch["target"].shape[1], forced_goal=paraphrase_goal
+                generation_prompt, batch["target"].shape[1], forced_goal=paraphrase_goal
             )
             paraphrase_ok = paraphrase_generated[:, : model.vocab.max_facets].eq(
                 batch["target"][:, : model.vocab.max_facets]
             )
             paraphrase_goal_exact.extend((paraphrase_ok | ~active).all(1).float().cpu().tolist())
 
-            _, counterfactual_goal = model.encode(batch["counterfactual_prompt"])
+            _, counterfactual_goal = model.encode(_counterfactual_goal_prompt(batch))
             substituted, _, _ = model.generate(
-                batch["prompt"], batch["target"].shape[1], forced_goal=counterfactual_goal
+                generation_prompt, batch["target"].shape[1], forced_goal=counterfactual_goal
             )
             row_index = torch.arange(len(substituted), device=device)
             changed = substituted[
@@ -314,7 +512,9 @@ def evaluate(
 
             mode_weights = model.mode_embedding.weight.detach().clone()
             model.mode_embedding.weight.zero_()
-            without_mode, _, _ = model.generate(batch["prompt"], batch["target"].shape[1])
+            without_mode, _, _ = model.generate(
+                generation_prompt, batch["target"].shape[1], goal_prompt=goal_prompt
+            )
             model.mode_embedding.weight.copy_(mode_weights)
             no_mode_ok = without_mode[:, : model.vocab.max_facets].eq(
                 batch["target"][:, : model.vocab.max_facets]
@@ -324,7 +524,9 @@ def evaluate(
             swapped = mode_weights.clone()
             swapped[[0, 1]] = swapped[[1, 0]]
             model.mode_embedding.weight.copy_(swapped)
-            swapped_mode, _, _ = model.generate(batch["prompt"], batch["target"].shape[1])
+            swapped_mode, _, _ = model.generate(
+                generation_prompt, batch["target"].shape[1], goal_prompt=goal_prompt
+            )
             model.mode_embedding.weight.copy_(mode_weights)
             swapped_ok = swapped_mode[:, : model.vocab.max_facets].eq(
                 batch["target"][:, : model.vocab.max_facets]
@@ -339,8 +541,12 @@ def evaluate(
 
         positive_probability = negative_probability = None
         if model.spec.validator is not None:
-            positive, _ = model.validation_logits(batch["prompt"], batch["target"], goal)
-            negative, _ = model.validation_logits(batch["prompt"], batch["corrupted"], goal)
+            positive, _ = model.validation_logits(
+                batch["prompt"], batch["target"], goal, goal_prompt=goal_prompt
+            )
+            negative, _ = model.validation_logits(
+                batch["prompt"], batch["corrupted"], goal, goal_prompt=goal_prompt
+            )
             positive_probability = positive.sigmoid()
             negative_probability = negative.sigmoid()
             labels.extend([1] * len(positive) + [0] * len(negative))
@@ -397,8 +603,13 @@ def evaluate(
         metrics.update(
             zero_goal_exact_match=mean(zero_exact),
             shuffled_goal_exact_match=mean(shuffle_exact),
+            constant_goal_exact_match=mean(constant_exact),
+            random_goal_exact_match=mean(random_exact),
             zero_goal_effect=mean(exact) - mean(zero_exact),
             shuffled_goal_effect=mean(exact) - mean(shuffle_exact),
+            constant_goal_effect=mean(exact) - mean(constant_exact),
+            random_goal_effect=mean(exact) - mean(random_exact),
+            correct_minus_shuffled_goal=mean(exact) - mean(shuffle_exact),
             same_goal_paraphrase_cosine=mean(paraphrase_similarity),
             different_goal_cosine=mean(different_goal_similarity),
             goal_separation_margin=(
@@ -495,6 +706,9 @@ def run(config: dict[str, Any], output_root: Path, repository: Path) -> Path:
     train_wall = time.perf_counter() - before
     validation = validation_losses(model, validation_data, config, device)
     metrics, predictions = evaluate(model, test_data, config, device)
+    metrics.update(
+        evaluate_goal_probes(model, train_data, validation_data, test_data, config, device)
+    )
     metrics.update(
         baseline=baseline,
         seed=seed,

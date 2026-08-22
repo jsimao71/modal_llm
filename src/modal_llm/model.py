@@ -32,6 +32,7 @@ class GenerationContext:
 
     prefix: torch.Tensor
     prompt_padding: torch.Tensor
+    prefix_length: int
     goal: torch.Tensor | None
     conditioning: torch.Tensor | None
 
@@ -65,6 +66,7 @@ class ModeTransformer(nn.Module):
         ff_mult: int = 4,
         dropout: float = 0.1,
         max_length: int = 128,
+        generation_prompt_only: bool = False,
     ) -> None:
         super().__init__()
         if baseline not in BASELINES:
@@ -72,6 +74,7 @@ class ModeTransformer(nn.Module):
         self.vocab = vocab
         self.spec = BASELINES[baseline]
         self.d_model = d_model
+        self.generation_prompt_only = generation_prompt_only
         self.token_embedding = nn.Embedding(vocab.size, d_model, padding_idx=vocab.PAD)
         self.position_embedding = nn.Embedding(max_length, d_model)
         self.mode_embedding = nn.Embedding(len(MODES), d_model)
@@ -181,39 +184,49 @@ class ModeTransformer(nn.Module):
         self,
         prompt: torch.Tensor,
         *,
+        goal_prompt: torch.Tensor | None = None,
         forced_goal: torch.Tensor | None = None,
     ) -> GenerationContext:
         """Compute prompt features and latch goal conditioning exactly once."""
 
         prompt_padding = prompt.eq(self.vocab.PAD)
         goal = None
+        goal_prompt = prompt if goal_prompt is None else goal_prompt
         if self.spec.encode_mask is not None:
-            encoded, goal = self.encode(prompt)
-            if self.spec.encoded_prompt:
+            encoded, goal = self.encode(goal_prompt)
+            if self.spec.encoded_prompt and not self.generation_prompt_only:
                 prefix = encoded + self.mode_embedding.weight[MODES["generate"]][None, None, :]
+                prefix_padding = goal_prompt.eq(self.vocab.PAD)
             else:
                 prefix = self._embeddings(prompt, "generate")
+                prefix_padding = prompt_padding
         else:
             prefix = self._embeddings(prompt, "generate")
+            prefix_padding = prompt_padding
         effective_goal = forced_goal if forced_goal is not None else goal
         conditioning = None
         if self.spec.use_goal and effective_goal is not None:
             conditioning = self.goal_condition(effective_goal).unsqueeze(1)
             prefix = prefix + conditioning
-        return GenerationContext(prefix, prompt_padding, goal, conditioning)
+        return GenerationContext(prefix, prefix_padding, prefix.shape[1], goal, conditioning)
 
     def generation_forward(
         self,
         prompt: torch.Tensor,
         decoder_input: torch.Tensor,
         *,
+        goal_prompt: torch.Tensor | None = None,
         forced_goal: torch.Tensor | None = None,
         context: GenerationContext | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
         if context is not None and forced_goal is not None:
             raise ValueError("Pass forced_goal when preparing context, not with an existing context")
-        context = context or self.prepare_generation(prompt, forced_goal=forced_goal)
-        suffix = self._embeddings(decoder_input, "generate", offset=prompt.shape[1])
+        if context is not None and goal_prompt is not None:
+            raise ValueError("Pass goal_prompt when preparing context, not with an existing context")
+        context = context or self.prepare_generation(
+            prompt, goal_prompt=goal_prompt, forced_goal=forced_goal
+        )
+        suffix = self._embeddings(decoder_input, "generate", offset=context.prefix_length)
         if self.spec.matched_mlp:
             suffix = suffix + self.match_control(suffix)
         if context.conditioning is not None:
@@ -221,7 +234,7 @@ class ModeTransformer(nn.Module):
         embeddings = torch.cat([context.prefix, suffix], dim=1)
         padding = torch.cat([context.prompt_padding, decoder_input.eq(self.vocab.PAD)], dim=1)
         hidden = self._run(embeddings, padding, causal=True)
-        generated_hidden = hidden[:, prompt.shape[1] :, :]
+        generated_hidden = hidden[:, context.prefix_length :, :]
         return self.lm_head(generated_hidden), context.goal, generated_hidden
 
     def generate(
@@ -229,13 +242,14 @@ class ModeTransformer(nn.Module):
         prompt: torch.Tensor,
         max_tokens: int,
         *,
+        goal_prompt: torch.Tensor | None = None,
         forced_goal: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor | None, int]:
         decoder = torch.full(
             (prompt.shape[0], 1), self.vocab.OUT_BOS, dtype=torch.long, device=prompt.device
         )
         before = self.compute_stats()["forward_calls"]
-        context = self.prepare_generation(prompt, forced_goal=forced_goal)
+        context = self.prepare_generation(prompt, goal_prompt=goal_prompt, forced_goal=forced_goal)
         for _ in range(max_tokens):
             logits, _, _ = self.generation_forward(prompt, decoder, context=context)
             decoder = torch.cat([decoder, logits[:, -1].argmax(-1, keepdim=True)], dim=1)
@@ -275,14 +289,19 @@ class ModeTransformer(nn.Module):
         return output, reread_goal
 
     def validation_logits(
-        self, prompt: torch.Tensor, candidate: torch.Tensor, goal: torch.Tensor | None = None
+        self,
+        prompt: torch.Tensor,
+        candidate: torch.Tensor,
+        goal: torch.Tensor | None = None,
+        *,
+        goal_prompt: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         output, reread_goal = self._review_representations(prompt, candidate)
         if self.spec.validator == "reread":
             intended = reread_goal
         else:
             if goal is None:
-                _, goal = self.encode(prompt)
+                _, goal = self.encode(prompt if goal_prompt is None else goal_prompt)
             intended = goal
         assert intended is not None
         features = torch.cat(
@@ -303,7 +322,8 @@ class ModeTransformer(nn.Module):
         facet = (raw * batch["active_facets"]).sum() / batch["active_facets"].sum()
         result = {"goal": facet}
         if invariance_weight > 0:
-            _, paraphrase_goal = self.encode(batch["paraphrase_prompt"])
+            goal_prompt = batch.get("paraphrase_goal_prompt", batch["paraphrase_prompt"])
+            _, paraphrase_goal = self.encode(goal_prompt)
             invariance = (
                 1.0 - F.cosine_similarity(goal, paraphrase_goal, dim=-1)
             ).mean()
@@ -318,7 +338,7 @@ class ModeTransformer(nn.Module):
     ) -> dict[str, torch.Tensor]:
         if not self.spec.use_goal:
             raise RuntimeError(f"{self.spec.name} does not use a goal state")
-        _, goal = self.encode(batch["prompt"])
+        _, goal = self.encode(batch.get("goal_prompt", batch["prompt"]))
         losses = self._goal_losses(goal, batch, invariance_weight)
         total = losses["goal"] + invariance_weight * losses.get(
             "goal_invariance", goal.new_zeros(())
@@ -327,10 +347,15 @@ class ModeTransformer(nn.Module):
 
     def losses(self, batch: dict[str, torch.Tensor], weights: dict[str, float]) -> dict[str, torch.Tensor]:
         target = batch["target"]
+        generation_prompt = batch.get("generation_prompt", batch["prompt"])
+        goal_prompt = batch.get("goal_prompt", batch["prompt"])
+        validation_prompt = batch["prompt"]
         decoder_input = torch.cat(
             [torch.full_like(target[:, :1], self.vocab.OUT_BOS), target[:, :-1]], dim=1
         )
-        logits, goal, _ = self.generation_forward(batch["prompt"], decoder_input)
+        logits, goal, _ = self.generation_forward(
+            generation_prompt, decoder_input, goal_prompt=goal_prompt
+        )
         lm = F.cross_entropy(
             logits.reshape(-1, logits.shape[-1]), target.reshape(-1), ignore_index=self.vocab.PAD
         )
@@ -349,9 +374,11 @@ class ModeTransformer(nn.Module):
             result.update(goal_losses)
 
         if self.spec.validator is not None:
-            positive, positive_facets = self.validation_logits(batch["prompt"], target, goal)
+            positive, positive_facets = self.validation_logits(
+                validation_prompt, target, goal, goal_prompt=goal_prompt
+            )
             negative, negative_facets = self.validation_logits(
-                batch["prompt"], batch["corrupted"], goal
+                validation_prompt, batch["corrupted"], goal, goal_prompt=goal_prompt
             )
             labels = torch.cat([torch.ones_like(positive), torch.zeros_like(negative)])
             validation = F.binary_cross_entropy_with_logits(

@@ -33,10 +33,14 @@ class Vocabulary:
     TEMPLATE_B: int = 10
     TEMPLATE_C: int = 11
     FILLER: int = 12
+    CONTENT_OPEN: int = 13
+    CONTENT_CLOSE: int = 14
+    GOAL_OPEN: int = 15
+    GOAL_CLOSE: int = 16
 
     @property
     def requirement_base(self) -> int:
-        return 13
+        return 17
 
     @property
     def answer_base(self) -> int:
@@ -174,6 +178,38 @@ class ConstraintDataset(Dataset):
         prompt.append(self.vocab.TASK_END)
         return prompt
 
+    def _render_content(self, order: list[int], family: str) -> list[int]:
+        if family == "paraphrase":
+            family = "reordered"
+            order = list(reversed(order))
+        template = {
+            "standard": self.vocab.TEMPLATE_A,
+            "reordered": self.vocab.TEMPLATE_B,
+            "interleaved": self.vocab.TEMPLATE_C,
+        }[family]
+        content = [self.vocab.TASK_BOS, template, self.vocab.CONTENT_OPEN]
+        facet_order = list(order)
+        if family == "reordered":
+            facet_order = list(reversed(facet_order))
+        elif family == "interleaved":
+            facet_order = list(facet_order[::2] + facet_order[1::2])
+        for facet in facet_order:
+            content.append(self.vocab.requirement(facet, 0))
+        content.extend([self.vocab.CONTENT_CLOSE, self.vocab.TASK_END])
+        return content
+
+    def _render_goal_only_prompt(
+        self,
+        rng: random.Random,
+        values: list[int],
+        order: list[int],
+        family: str,
+    ) -> list[int]:
+        prompt = [self.vocab.TASK_BOS, self.vocab.GOAL_OPEN]
+        prompt.extend(self._render_prompt(rng, values, order, family)[1:-1])
+        prompt.extend([self.vocab.GOAL_CLOSE, self.vocab.TASK_END])
+        return prompt
+
     def _corrupt_candidate(
         self,
         rng: random.Random,
@@ -214,8 +250,13 @@ class ConstraintDataset(Dataset):
         rng.shuffle(order)
         family = prompt_family or self.prompt_family
         prompt = self._render_prompt(rng, values, order, family)
+        content_prompt = self._render_content(order, family)
+        goal_prompt = self._render_goal_only_prompt(rng, values, order, family)
         paraphrase_rng = random.Random(self.seed * 1_000_003 + index + 40_000_087)
         paraphrase_prompt = self._render_prompt(
+            paraphrase_rng, values, order, "paraphrase"
+        )
+        paraphrase_goal_prompt = self._render_goal_only_prompt(
             paraphrase_rng, values, order, "paraphrase"
         )
 
@@ -235,6 +276,7 @@ class ConstraintDataset(Dataset):
 
         counterfactual_facet = rng.randrange(k)
         counterfactual_prompt = list(prompt)
+        counterfactual_goal_prompt = list(goal_prompt)
         original = self.vocab.requirement(counterfactual_facet, values[counterfactual_facet])
         replacement = self.vocab.requirement(counterfactual_facet, 1 - values[counterfactual_facet])
         for position in range(1, len(counterfactual_prompt) - 1):
@@ -247,6 +289,12 @@ class ConstraintDataset(Dataset):
                 break
         else:
             raise AssertionError("Authoritative counterfactual facet not found")
+        for position in range(1, len(counterfactual_goal_prompt) - 1):
+            if counterfactual_goal_prompt[position] == original:
+                counterfactual_goal_prompt[position] = replacement
+                break
+        else:
+            raise AssertionError("Counterfactual goal facet not found")
         counterfactual_target = list(target)
         counterfactual_target[counterfactual_facet] = self.vocab.answer(
             counterfactual_facet, 1 - values[counterfactual_facet]
@@ -255,10 +303,14 @@ class ConstraintDataset(Dataset):
         return {
             "id": f"{self.split}-{index}",
             "prompt": torch.tensor(prompt, dtype=torch.long),
+            "generation_prompt": torch.tensor(content_prompt, dtype=torch.long),
+            "goal_prompt": torch.tensor(goal_prompt, dtype=torch.long),
             "paraphrase_prompt": torch.tensor(paraphrase_prompt, dtype=torch.long),
+            "paraphrase_goal_prompt": torch.tensor(paraphrase_goal_prompt, dtype=torch.long),
             "target": torch.tensor(target, dtype=torch.long),
             "corrupted": torch.tensor(corrupted, dtype=torch.long),
             "counterfactual_prompt": torch.tensor(counterfactual_prompt, dtype=torch.long),
+            "counterfactual_goal_prompt": torch.tensor(counterfactual_goal_prompt, dtype=torch.long),
             "counterfactual_target": torch.tensor(counterfactual_target, dtype=torch.long),
             "bits": torch.tensor(bits),
             "active_facets": torch.tensor(active),
@@ -308,26 +360,45 @@ class ConstraintDataset(Dataset):
 
 def collate_examples(rows: list[dict[str, Any]]) -> dict[str, Any]:
     width = max(row["prompt"].numel() for row in rows)
+    generation_width = max(row["generation_prompt"].numel() for row in rows)
+    goal_width = max(row["goal_prompt"].numel() for row in rows)
     paraphrase_width = max(row["paraphrase_prompt"].numel() for row in rows)
+    paraphrase_goal_width = max(row["paraphrase_goal_prompt"].numel() for row in rows)
     prompts = torch.zeros((len(rows), width), dtype=torch.long)
+    generation_prompts = torch.zeros((len(rows), generation_width), dtype=torch.long)
+    goal_prompts = torch.zeros((len(rows), goal_width), dtype=torch.long)
     paraphrase_prompts = torch.zeros((len(rows), paraphrase_width), dtype=torch.long)
+    paraphrase_goal_prompts = torch.zeros((len(rows), paraphrase_goal_width), dtype=torch.long)
     counterfactual_prompts = torch.zeros((len(rows), width), dtype=torch.long)
+    counterfactual_goal_prompts = torch.zeros((len(rows), goal_width), dtype=torch.long)
     for index, row in enumerate(rows):
         prompts[index, : row["prompt"].numel()] = row["prompt"]
+        generation_prompts[index, : row["generation_prompt"].numel()] = row["generation_prompt"]
+        goal_prompts[index, : row["goal_prompt"].numel()] = row["goal_prompt"]
         paraphrase_prompts[index, : row["paraphrase_prompt"].numel()] = row[
             "paraphrase_prompt"
         ]
+        paraphrase_goal_prompts[
+            index, : row["paraphrase_goal_prompt"].numel()
+        ] = row["paraphrase_goal_prompt"]
         counterfactual_prompts[index, : row["counterfactual_prompt"].numel()] = row[
             "counterfactual_prompt"
         ]
+        counterfactual_goal_prompts[
+            index, : row["counterfactual_goal_prompt"].numel()
+        ] = row["counterfactual_goal_prompt"]
     return {
         "ids": [row["id"] for row in rows],
         "corruption_types": [row["corruption_type"] for row in rows],
         "prompt": prompts,
+        "generation_prompt": generation_prompts,
+        "goal_prompt": goal_prompts,
         "paraphrase_prompt": paraphrase_prompts,
+        "paraphrase_goal_prompt": paraphrase_goal_prompts,
         "target": torch.stack([row["target"] for row in rows]),
         "corrupted": torch.stack([row["corrupted"] for row in rows]),
         "counterfactual_prompt": counterfactual_prompts,
+        "counterfactual_goal_prompt": counterfactual_goal_prompts,
         "counterfactual_target": torch.stack([row["counterfactual_target"] for row in rows]),
         "bits": torch.stack([row["bits"] for row in rows]),
         "active_facets": torch.stack([row["active_facets"] for row in rows]),
