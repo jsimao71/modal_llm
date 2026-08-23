@@ -45,6 +45,7 @@ hypotheses.
 modal-llm train-eval --config configs/paper1/z-only-gate.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector.yaml
 modal-llm train-eval --config configs/paper1/z-only-all-layers.yaml
+modal-llm train-eval --config configs/paper1/z-only-periodic.yaml
 ```
 
 This configuration removes token-level goal access from the generator by using the
@@ -64,7 +65,12 @@ architectural sweeps.
 The all-layers variant is the first direct persistence diagnostic. It re-injects the
  same latched goal conditioning before every shared transformer block during generation.
  Compare it against the default input-only conditioning to test whether persistent
- goal availability across depth matters more than one-shot compression at the input.
+goal availability across depth matters more than one-shot compression at the input.
+
+The periodic variant is the next selective persistence control. It re-injects the same
+latched goal condition every $K$ layers, with $K=2$ in the first pilot, to test whether
+less intrusive repeated access can recover causal benefits without the interference seen
+under all-layer additive reinjection.
 
 ## Main model and five-seed baseline suite
 
