@@ -1,0 +1,19 @@
+{
+  "status": "one-seed canonical direct-goal exposure diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "metric_definition": "D_Z(p) = score(correct Z, p) - score(shuffled Z, p)",
+  "conditions": [
+    {"requested_p": 0.0, "realized_p": 0.0, "correct_exact": 1.0, "shuffled_exact": 0.099609375, "d_z_exact": 0.900390625, "correct_facet": 1.0, "shuffled_facet": 0.50029296875, "d_z_facet": 0.49970703125, "zero_facet": 0.5098307291666666, "counterfactual_exact": 1.0},
+    {"requested_p": 0.25, "realized_p": 0.23971915747241726, "correct_exact": 1.0, "shuffled_exact": 0.09765625, "d_z_exact": 0.90234375, "correct_facet": 1.0, "shuffled_facet": 0.5029947916666666, "d_z_facet": 0.4970052083333334, "zero_facet": 0.5195963541666666, "counterfactual_exact": 1.0},
+    {"requested_p": 0.5, "realized_p": 0.4929789368104313, "correct_exact": 1.0, "shuffled_exact": 0.1015625, "d_z_exact": 0.8984375, "correct_facet": 1.0, "shuffled_facet": 0.5032552083333334, "d_z_facet": 0.49674479166666663, "zero_facet": 0.5171875, "counterfactual_exact": 1.0},
+    {"requested_p": 0.75, "realized_p": 0.7387161484453361, "correct_exact": 1.0, "shuffled_exact": 0.109375, "d_z_exact": 0.890625, "correct_facet": 1.0, "shuffled_facet": 0.5031901041666667, "d_z_facet": 0.49680989583333335, "zero_facet": 0.53125, "counterfactual_exact": 1.0},
+    {"requested_p": 1.0, "realized_p": 1.0, "correct_exact": 1.0, "shuffled_exact": 0.126953125, "d_z_exact": 0.873046875, "correct_facet": 1.0, "shuffled_facet": 0.5672526041666667, "d_z_facet": 0.4327473958333333, "zero_facet": 0.7381510416666667, "counterfactual_exact": 0.92578125}
+  ],
+  "interpretation": [
+    "The expected smooth bypass curve is not observed: exact-match D_Z stays between .873 and .902 across the full direct-exposure range.",
+    "Shuffled-Z facet satisfaction remains near chance through p=.75 and improves only at p=1, showing that partial direct access does not replace the latent route for complete outputs.",
+    "At p=1, zero-Z facet satisfaction rises to .738, so direct tokens are usable when latent conditioning is absent, but the trained model still prefers the stronger late-layer Z route.",
+    "At p=1, counterfactual Z produces the complete Z-consistent output in .926 of cases despite conflicting direct goal tokens, demonstrating dominant top-down latent control rather than bypass.",
+    "Because exposure conditions are trained independently, this is a route-preference diagnostic with adaptation, not a pure inference-time intervention or a headline multi-seed result."
+  ]
+}

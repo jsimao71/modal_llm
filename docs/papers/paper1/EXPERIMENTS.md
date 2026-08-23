@@ -164,6 +164,15 @@ configs add p in {.25, .5, .75, 1}. Compare correct and shuffled Z within every
 condition to estimate whether the generator bypasses Z as a direct symbolic route is
 restored.
 
+The completed curve and plot source are
+[`results/z_necessity_curve_pilot_iteration1.json`](results/z_necessity_curve_pilot_iteration1.json)
+and [`results/z_necessity_curve_pilot_iteration1.csv`](results/z_necessity_curve_pilot_iteration1.csv).
+Exact-match D_Z remains between .873 and .902 from p=0 to p=1 rather than declining
+smoothly. At p=1, zero-Z facet satisfaction rises to .738, showing that direct tokens
+are usable, but counterfactual Z still overrides conflicting direct requirements in
+.926 of complete outputs. The current late-layer additive architecture therefore
+prefers Z rather than bypassing it.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,
