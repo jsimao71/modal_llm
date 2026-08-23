@@ -202,6 +202,18 @@ The convergence follow-up changes only the maximum joint budget from 40 to 80 ep
 and early-stopping patience from 5 to 8 validations. Data, initialization seed,
 architecture, optimizer, and evaluator remain fixed.
 
+The extended result is stored in
+[`results/horizon_32_extended_optimization_iteration1.json`](results/horizon_32_extended_optimization_iteration1.json),
+with plot source in
+[`results/horizon_32_extended_optimization_iteration1.csv`](results/horizon_32_extended_optimization_iteration1.csv).
+Direct text reaches 1.0 exact match and 1.0 satisfaction in all quartiles, proving that
+the scheduled task is learnable and that its pilot drift was an optimization artifact.
+Correct Z reaches only .176 satisfaction and zero exact match, barely above its
+40-epoch .170 result; shuffled-Z satisfaction is .090, for a causal effect of .086.
+The single additive vector is therefore used but fails to support accurate
+query-dependent retrieval over the varying schedule. Longer horizons remain gated;
+the next comparison should test structured latent access at the same 31-token point.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,

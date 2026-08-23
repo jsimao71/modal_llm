@@ -1,0 +1,75 @@
+{
+  "status": "one-seed 31-output-token extended-optimization diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "task": {
+    "scheduled_facet_positions": 30,
+    "target_output_length_including_end": 31,
+    "schedule_blocks": 5,
+    "facets_per_block": 6,
+    "test_examples": 128,
+    "dataset_sha256": "f7f2320809d11186cc0eef938d90035b0773946fbdb1708f84e22e9114566569"
+  },
+  "conditions": {
+    "canonical_late_layer_z": {
+      "config_reference": "configs/paper1/horizon-32-z-converged.yaml",
+      "baseline": "B5",
+      "run_reference": "results/paper1-horizon-32-z-converged/B5/20260823T151832923919Z-seed0",
+      "source_commit": "e1a8c45",
+      "best_epoch": 80,
+      "completed_joint_epochs": 80,
+      "goal_warmup_epochs": 10,
+      "validation_lm": 1.118616633117199,
+      "task_exact_match": 0.0,
+      "task_facet_satisfaction": 0.17552083884947933,
+      "quartile_satisfaction": [
+        0.2138671875,
+        0.1611328125,
+        0.16741071990691125,
+        0.1562500058207661
+      ],
+      "early_minus_late_drift": 0.05761718167923391,
+      "shuffled_goal_exact_match": 0.0,
+      "shuffled_goal_facet_satisfaction": 0.08958333655027673,
+      "correct_minus_shuffled_facet_effect": 0.0859375022992026,
+      "shuffled_quartile_satisfaction": [
+        0.1064453125,
+        0.083984375,
+        0.07700893189758062,
+        0.08928571792785078
+      ]
+    },
+    "direct_text_goal": {
+      "config_reference": "configs/paper1/horizon-32-direct-converged.yaml",
+      "baseline": "B0",
+      "run_reference": "results/paper1-horizon-32-direct-converged/B0/20260823T150949072682Z-seed0",
+      "source_commit": "e1a8c45",
+      "best_epoch": 80,
+      "completed_joint_epochs": 80,
+      "goal_warmup_epochs": 0,
+      "validation_lm": 0.0044789749081246555,
+      "task_exact_match": 1.0,
+      "task_facet_satisfaction": 1.0,
+      "quartile_satisfaction": [1.0, 1.0, 1.0, 1.0],
+      "early_minus_late_drift": 0.0
+    }
+  },
+  "comparisons": {
+    "direct_minus_z_exact_match": 1.0,
+    "direct_minus_z_facet_satisfaction": 0.8244791611505207,
+    "z_correct_minus_shuffled_facet_satisfaction": 0.0859375022992026,
+    "z_facet_gain_over_40_epoch_pilot": 0.00546875077998265
+  },
+  "gate_audit": {
+    "task_learnability": "pass: direct text reaches 1.0 exact match and 1.0 satisfaction in every quartile",
+    "causal_z_use": "provisional pass at one seed: correct Z improves satisfaction by .086 over shuffled Z",
+    "z_task_optimization": "fail: Z exact match remains zero and satisfaction rises only .005 relative to the 40-epoch pilot",
+    "persistence": "fail to establish: correct Z declines .058 and remains far below the perfect direct control",
+    "decision": "do not launch longer horizons; test whether structured or query-dependent latent access repairs the 31-token deficit"
+  },
+  "interpretation": [
+    "Extended optimization completely removes the direct control's apparent position-dependent drift, proving that the scheduled task is learnable.",
+    "The same extension barely changes single-vector late-layer Z, which remains unable to produce any complete 31-token sequence.",
+    "The .086 shuffled-Z effect shows that the generator uses Z, but causal use is not sufficient for accurate scheduled retrieval.",
+    "A plausible mechanism is that one globally added vector is poorly suited to selecting different facet values in response to a varying query sequence; this requires direct comparison with structured latent access before any longer-horizon sweep."
+  ]
+}
