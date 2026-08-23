@@ -49,6 +49,8 @@ modal-llm train-eval --config configs/paper1/z-only-periodic.yaml
 modal-llm train-eval --config configs/paper1/z-only-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
+modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
+modal-llm train-eval --config configs/paper1/z-only-prefix-8.yaml
 ```
 
 This configuration removes token-level goal access from the generator by using the
@@ -91,6 +93,11 @@ conditioning. It turns the latent goal state into a small bank of learned contin
 prefix tokens that are prepended to the generator context, testing whether persistent
 goal access is better provided through a dedicated latent prefix than through additive
 state injection.
+
+The first follow-up after the base prefix pilot is a small prefix-token sweep. Compare
+2, 4, and 8 latent prefix tokens under the same held-out Z-only strong-goal setting to
+determine whether the competitive prefix result is robust or narrowly tuned to one
+prefix length.
 
 ## Main model and five-seed baseline suite
 

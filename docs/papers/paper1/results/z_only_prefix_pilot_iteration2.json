@@ -1,0 +1,64 @@
+{
+  "status": "one-seed z-only conditioning-mechanism diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "comparison": [
+    {
+      "condition": "late_layers_additive",
+      "config_reference": "configs/paper1/z-only-late-layers.yaml",
+      "baseline": "B5",
+      "conditioning_mode": "additive",
+      "z_injection_schedule": "late_layers",
+      "exact_match": 0.1640625,
+      "facet_satisfaction": 0.6185221414198168,
+      "shuffled_goal_effect": 0.0546875,
+      "zero_goal_effect": 0.052734375,
+      "goal_probe_linear_test_facet_accuracy": 0.6359077231695085,
+      "facet_goal_substitution_success": 0.951171875
+    },
+    {
+      "condition": "prefix_tokens_2",
+      "config_reference": "configs/paper1/z-only-prefix-2.yaml",
+      "baseline": "B5",
+      "conditioning_mode": "prefix",
+      "prefix_tokens": 2,
+      "exact_match": 0.15625,
+      "facet_satisfaction": 0.6149414122628514,
+      "shuffled_goal_effect": 0.0625,
+      "zero_goal_effect": 0.048828125,
+      "goal_probe_linear_test_facet_accuracy": 0.6559679037111334,
+      "facet_goal_substitution_success": 0.90625
+    },
+    {
+      "condition": "prefix_tokens_4",
+      "config_reference": "configs/paper1/z-only-prefix.yaml",
+      "baseline": "B5",
+      "conditioning_mode": "prefix",
+      "prefix_tokens": 4,
+      "exact_match": 0.162109375,
+      "facet_satisfaction": 0.6235351619543508,
+      "shuffled_goal_effect": 0.056640625,
+      "zero_goal_effect": 0.05078125,
+      "goal_probe_linear_test_facet_accuracy": 0.6449348044132397,
+      "facet_goal_substitution_success": 0.888671875
+    },
+    {
+      "condition": "prefix_tokens_8",
+      "config_reference": "configs/paper1/z-only-prefix-8.yaml",
+      "baseline": "B5",
+      "conditioning_mode": "prefix",
+      "prefix_tokens": 8,
+      "exact_match": 0.162109375,
+      "facet_satisfaction": 0.5927083391870838,
+      "shuffled_goal_effect": 0.052734375,
+      "zero_goal_effect": 0.068359375,
+      "goal_probe_linear_test_facet_accuracy": 0.600802407221665,
+      "facet_goal_substitution_success": 0.8828125
+    }
+  ],
+  "interpretation": [
+    "Prefix conditioning is robust enough to remain competitive across multiple prefix lengths, so the original prefix result was not a single-setting anomaly.",
+    "Two prefix tokens give the strongest shuffled-goal effect and the best held-out linear probe accuracy in the sweep, while four prefix tokens give the best facet satisfaction and nearly the best exact match.",
+    "Eight prefix tokens do not improve exact match over four and noticeably weaken facet satisfaction and held-out probe quality, suggesting that larger latent prefixes can become noisy or inefficient in this small setting.",
+    "The current best prefix region is therefore small rather than large, with 2 to 4 latent prefix tokens looking most promising for the next stage."
+  ]
+}
