@@ -186,6 +186,17 @@ four output quartiles and early-minus-late drift for both conditions; shuffled-Z
 counterparts are additionally reported only for the latent condition. Both conditions
 instantiate a 1,152-position model so later horizon points remain parameter-matched.
 
+The completed one-seed 31-token pilot is recorded in
+[`results/horizon_32_pilot_iteration1.json`](results/horizon_32_pilot_iteration1.json),
+with plot source in
+[`results/horizon_32_pilot_iteration1.csv`](results/horizon_32_pilot_iteration1.csv).
+Direct text reaches .637 per-position satisfaction versus .170 for correct Z and .090
+for shuffled Z. Direct satisfaction falls from .764 in the first quartile to .483 in
+the fourth, whereas the small .019 Z drift is not evidence of persistence because Z
+is near floor throughout. Exact match is zero for both conditions, and both select the
+last or penultimate epoch while validation loss is still improving. The optimization
+gate therefore fails: converge this matched point before launching longer horizons.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,

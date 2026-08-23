@@ -1,0 +1,77 @@
+{
+  "status": "one-seed 31-output-token optimization and persistence diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "task": {
+    "scheduled_facet_positions": 30,
+    "target_output_length_including_end": 31,
+    "schedule_blocks": 5,
+    "facets_per_block": 6,
+    "test_examples": 128,
+    "dataset_sha256": "f7f2320809d11186cc0eef938d90035b0773946fbdb1708f84e22e9114566569"
+  },
+  "conditions": {
+    "canonical_late_layer_z": {
+      "config_reference": "configs/paper1/horizon-32-z.yaml",
+      "baseline": "B5",
+      "run_reference": "results/paper1-horizon-32-z/B5/20260823T144641230845Z-seed0",
+      "source_commit": "55d411fdc4c453f9f1b44d1c84712ee6c4364877",
+      "best_epoch": 39,
+      "completed_joint_epochs": 40,
+      "goal_warmup_epochs": 10,
+      "validation_lm": 1.2091607227921486,
+      "task_exact_match": 0.0,
+      "task_facet_satisfaction": 0.17005208806949668,
+      "quartile_satisfaction": [
+        0.1865234375,
+        0.1494140625,
+        0.1774553635623306,
+        0.16741072002332658
+      ],
+      "early_minus_late_drift": 0.019112717476673424,
+      "shuffled_goal_exact_match": 0.0,
+      "shuffled_goal_facet_satisfaction": 0.09010416970704682,
+      "correct_minus_shuffled_facet_effect": 0.07994791836244985,
+      "shuffled_quartile_satisfaction": [
+        0.0986328125,
+        0.078125,
+        0.09263393247965723,
+        0.09151786111760885
+      ]
+    },
+    "direct_text_goal": {
+      "config_reference": "configs/paper1/horizon-32-direct.yaml",
+      "baseline": "B0",
+      "run_reference": "results/paper1-horizon-32-direct/B0/20260823T145933861232Z-seed0",
+      "source_commit": "7d89a51131dc60ec8b87ad2b37a1c361ee9ab9cd",
+      "best_epoch": 40,
+      "completed_joint_epochs": 40,
+      "goal_warmup_epochs": 0,
+      "validation_lm": 0.6211074441671371,
+      "task_exact_match": 0.0,
+      "task_facet_satisfaction": 0.6367187583819032,
+      "quartile_satisfaction": [
+        0.763671875,
+        0.693359375,
+        0.5803571568103507,
+        0.4832589409779757
+      ],
+      "early_minus_late_drift": 0.2804129340220243
+    }
+  },
+  "comparisons": {
+    "direct_minus_z_facet_satisfaction": 0.4666666703124065,
+    "z_correct_minus_shuffled_facet_satisfaction": 0.07994791836244985
+  },
+  "gate_audit": {
+    "task_optimization": "fail: both conditions select the final or penultimate epoch with validation LM still improving; exact match is zero",
+    "causal_z_use": "provisional pass at one seed: correct Z improves per-position satisfaction by .080 over shuffled Z",
+    "persistence": "not evaluable: flat Z quartiles occur near floor, while the stronger direct condition declines by .280 from first to last quartile",
+    "decision": "do not launch longer horizons; first converge the matched 31-token direct and Z conditions"
+  },
+  "interpretation": [
+    "Direct canonical goal tokens outperform canonical late-layer Z by .467 absolute per-position satisfaction at the same scheduled horizon.",
+    "The Z condition uses example-specific goal information, but its .170 satisfaction is too close to floor for its small .019 drift to count as persistence.",
+    "The direct condition exposes genuine position-dependent degradation, falling from .764 in the first quartile to .483 in the last.",
+    "Because both validation losses are still improving at selection, this pilot diagnoses insufficient optimization rather than the horizon at which persistent Z becomes beneficial."
+  ]
+}

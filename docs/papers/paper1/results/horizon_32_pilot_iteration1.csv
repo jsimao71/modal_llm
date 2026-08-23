@@ -1,0 +1,13 @@
+condition,quartile,satisfaction
+canonical_late_layer_z,1,0.1865234375
+canonical_late_layer_z,2,0.1494140625
+canonical_late_layer_z,3,0.1774553635623306
+canonical_late_layer_z,4,0.16741072002332658
+shuffled_z,1,0.0986328125
+shuffled_z,2,0.078125
+shuffled_z,3,0.09263393247965723
+shuffled_z,4,0.09151786111760885
+direct_text_goal,1,0.763671875
+direct_text_goal,2,0.693359375
+direct_text_goal,3,0.5803571568103507
+direct_text_goal,4,0.4832589409779757
