@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 
 import torch
@@ -68,6 +69,8 @@ class ModeTransformer(nn.Module):
         max_length: int = 128,
         generation_prompt_only: bool = False,
         goal_vectors: int = 1,
+        z_injection_schedule: str = "input_only",
+        z_injection_period: int = 2,
     ) -> None:
         super().__init__()
         if baseline not in BASELINES:
@@ -78,6 +81,8 @@ class ModeTransformer(nn.Module):
         self.generation_prompt_only = generation_prompt_only
         self.goal_vectors = goal_vectors
         self.latent_width = d_model * goal_vectors
+        self.z_injection_schedule = z_injection_schedule
+        self.z_injection_period = z_injection_period
         self.token_embedding = nn.Embedding(vocab.size, d_model, padding_idx=vocab.PAD)
         self.position_embedding = nn.Embedding(max_length, d_model)
         self.mode_embedding = nn.Embedding(len(MODES), d_model)
@@ -85,7 +90,8 @@ class ModeTransformer(nn.Module):
             d_model, nhead, d_model * ff_mult, dropout,
             batch_first=True, norm_first=True, activation="gelu",
         )
-        self.transformer = nn.TransformerEncoder(layer, layers, norm=nn.LayerNorm(d_model))
+        self.layers = nn.ModuleList(copy.deepcopy(layer) for _ in range(layers))
+        self.final_norm = nn.LayerNorm(d_model)
         self.goal_head = nn.Sequential(nn.Linear(d_model, d_model), nn.Tanh())
         self.review_head = nn.Sequential(nn.Linear(d_model, d_model), nn.Tanh())
         self.goal_queries = nn.Parameter(torch.randn(goal_vectors, d_model) * 0.02)
@@ -134,7 +140,8 @@ class ModeTransformer(nn.Module):
             self.token_embedding,
             self.position_embedding,
             self.mode_embedding,
-            self.transformer,
+            self.layers,
+            self.final_norm,
             self.lm_head,
         ]
         if self.spec.matched_mlp:
@@ -158,7 +165,33 @@ class ModeTransformer(nn.Module):
             + self.mode_embedding.weight[MODES[mode]][None, None, :]
         )
 
-    def _run(self, embeddings: torch.Tensor, padding: torch.Tensor, *, causal: bool) -> torch.Tensor:
+    def _selected_goal_layers(self) -> tuple[int, ...]:
+        count = len(self.layers)
+        if self.z_injection_schedule == "input_only":
+            return ()
+        if self.z_injection_schedule == "early_layers":
+            width = max(1, count // 4)
+            return tuple(range(width))
+        if self.z_injection_schedule == "periodic":
+            period = max(1, self.z_injection_period)
+            return tuple(range(0, count, period))
+        if self.z_injection_schedule in {"all_layers", "every_layer"}:
+            return tuple(range(count))
+        if self.z_injection_schedule == "late_layers":
+            width = max(1, count // 4)
+            return tuple(range(count - width, count))
+        raise ValueError(
+            f"Unknown z_injection_schedule {self.z_injection_schedule!r}"
+        )
+
+    def _run(
+        self,
+        embeddings: torch.Tensor,
+        padding: torch.Tensor,
+        *,
+        causal: bool,
+        conditioning: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         self._forward_calls += 1
         self._token_positions += int((~padding).sum())
         length = embeddings.shape[1]
@@ -167,9 +200,18 @@ class ModeTransformer(nn.Module):
             mask = torch.triu(
                 torch.ones(length, length, dtype=torch.bool, device=embeddings.device), diagonal=1
             )
-        return self.transformer(
-            embeddings, mask=mask, src_key_padding_mask=padding, is_causal=causal
-        )
+        hidden = embeddings
+        injected_layers = set(self._selected_goal_layers()) if conditioning is not None else set()
+        for index, layer in enumerate(self.layers):
+            if index in injected_layers:
+                hidden = hidden + conditioning
+            hidden = layer(
+                hidden,
+                src_mask=mask,
+                src_key_padding_mask=padding,
+                is_causal=causal,
+            )
+        return self.final_norm(hidden)
 
     @staticmethod
     def _mean(hidden: torch.Tensor, padding: torch.Tensor) -> torch.Tensor:
@@ -237,7 +279,8 @@ class ModeTransformer(nn.Module):
         conditioning = None
         if self.spec.use_goal and effective_goal is not None:
             conditioning = self.goal_condition(self._flatten_state(effective_goal)).unsqueeze(1)
-            prefix = prefix + conditioning
+            if self.z_injection_schedule == "input_only":
+                prefix = prefix + conditioning
         return GenerationContext(prefix, prefix_padding, prefix.shape[1], goal, conditioning)
 
     def generation_forward(
@@ -263,7 +306,7 @@ class ModeTransformer(nn.Module):
             suffix = suffix + context.conditioning
         embeddings = torch.cat([context.prefix, suffix], dim=1)
         padding = torch.cat([context.prompt_padding, decoder_input.eq(self.vocab.PAD)], dim=1)
-        hidden = self._run(embeddings, padding, causal=True)
+        hidden = self._run(embeddings, padding, causal=True, conditioning=context.conditioning)
         generated_hidden = hidden[:, context.prefix_length :, :]
         return self.lm_head(generated_hidden), context.goal, generated_hidden
 

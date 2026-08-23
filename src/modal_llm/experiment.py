@@ -81,6 +81,8 @@ def _model(config: dict[str, Any], dataset: ConstraintDataset) -> ModeTransforme
         max_length=int(values.get("max_length", 128)),
         generation_prompt_only=bool(values.get("generation_prompt_only", False)),
         goal_vectors=int(values.get("goal_vectors", 1)),
+        z_injection_schedule=str(values.get("z_injection_schedule", "input_only")),
+        z_injection_period=int(values.get("z_injection_period", 2)),
     )
 
 

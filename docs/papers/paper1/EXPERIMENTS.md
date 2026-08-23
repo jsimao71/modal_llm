@@ -44,6 +44,7 @@ hypotheses.
 ```powershell
 modal-llm train-eval --config configs/paper1/z-only-gate.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector.yaml
+modal-llm train-eval --config configs/paper1/z-only-all-layers.yaml
 ```
 
 This configuration removes token-level goal access from the generator by using the
@@ -59,6 +60,11 @@ Z-only protocol. It keeps additive latent conditioning but replaces the single g
 vector with a learned bank of latent goal vectors. Use it to test whether one-shot
 single-vector compression is the current bottleneck before moving on to deeper
 architectural sweeps.
+
+The all-layers variant is the first direct persistence diagnostic. It re-injects the
+ same latched goal conditioning before every shared transformer block during generation.
+ Compare it against the default input-only conditioning to test whether persistent
+ goal availability across depth matters more than one-shot compression at the input.
 
 ## Main model and five-seed baseline suite
 

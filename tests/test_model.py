@@ -131,6 +131,67 @@ def test_multivector_goal_state_shapes_and_validation_are_supported():
     assert validation_facets.shape == (2, dataset.vocab.max_facets)
 
 
+def test_goal_injection_schedule_selects_expected_layers():
+    dataset, _ = _batch()
+    model = ModeTransformer(
+        dataset.vocab, "B5", d_model=16, nhead=4, layers=8, dropout=0.0
+    )
+    assert model._selected_goal_layers() == ()
+    early = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=8,
+        dropout=0.0,
+        z_injection_schedule="early_layers",
+    )
+    periodic = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=8,
+        dropout=0.0,
+        z_injection_schedule="periodic",
+        z_injection_period=3,
+    )
+    late = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=8,
+        dropout=0.0,
+        z_injection_schedule="late_layers",
+    )
+    assert early._selected_goal_layers() == (0, 1)
+    assert periodic._selected_goal_layers() == (0, 3, 6)
+    assert late._selected_goal_layers() == (6, 7)
+
+
+def test_all_layer_goal_injection_path_runs_and_preserves_shapes():
+    dataset, batch = _batch()
+    model = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=2,
+        dropout=0.0,
+        generation_prompt_only=True,
+        z_injection_schedule="all_layers",
+    ).eval()
+    generated, goal, calls = model.generate(
+        batch["generation_prompt"],
+        max_tokens=3,
+        goal_prompt=batch["goal_prompt"],
+    )
+    assert generated.shape == (2, 3)
+    assert goal is not None
+    assert calls == 4
+
+
 def test_seeded_initialization_and_optimizer_step_are_deterministic():
     dataset, batch = _batch()
 
