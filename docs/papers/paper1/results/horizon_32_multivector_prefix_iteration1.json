@@ -1,0 +1,65 @@
+{
+  "status": "one-seed 31-output-token multi-vector encoding diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "condition": {
+    "config_reference": "configs/paper1/horizon-32-z-multivector-prefix-6.yaml",
+    "baseline": "B5",
+    "run_reference": "results/paper1-horizon-32-z-multivector-prefix-6/B5/20260823T155712470449Z-seed0",
+    "source_commit": "96c3c5b",
+    "conditioning_mode": "prefix",
+    "goal_vectors": 6,
+    "prefix_tokens": 6,
+    "best_epoch": 79,
+    "completed_joint_epochs": 80,
+    "goal_warmup_epochs": 10,
+    "parameter_count": 1551949,
+    "active_parameter_count": 945030,
+    "validation_goal": 0.0032859683997230604,
+    "validation_lm": 1.106704220175743,
+    "task_exact_match": 0.0,
+    "task_facet_satisfaction": 0.1846354219596833,
+    "quartile_satisfaction": [
+      0.2158203125,
+      0.169921875,
+      0.15066964854486287,
+      0.19977679289877415
+    ],
+    "early_minus_late_drift": 0.016043519601225853,
+    "shuffled_goal_exact_match": 0.0,
+    "shuffled_goal_facet_satisfaction": 0.09192708638147451,
+    "correct_minus_shuffled_facet_effect": 0.09270833557820879,
+    "shuffled_quartile_satisfaction": [
+      0.115234375,
+      0.0908203125,
+      0.08147321757860482,
+      0.07700893189758062
+    ],
+    "checkpoint_reload_verified": true
+  },
+  "matched_references": {
+    "one_vector_prefix_facet_satisfaction": 0.1718750046857167,
+    "one_vector_prefix_exact_match": 0.0,
+    "one_vector_prefix_shuffled_effect": 0.09348958529881202,
+    "one_vector_prefix_validation_goal": 0.0725635988637805,
+    "one_vector_prefix_active_parameter_count": 308230,
+    "direct_text_facet_satisfaction": 1.0,
+    "direct_text_exact_match": 1.0
+  },
+  "comparisons": {
+    "facet_gain_over_one_vector_prefix": 0.012760417273966595,
+    "active_parameter_ratio_over_one_vector_prefix": 3.065990981409986,
+    "validation_goal_loss_ratio_to_one_vector_prefix": 0.04528391090893147
+  },
+  "gate_audit": {
+    "encoded_state_structure": "fail behaviorally: six vectors improve satisfaction by only .013 and exact match remains zero",
+    "goal_decodability": "strongly improved: validation goal loss falls from .0726 to .00329",
+    "causal_z_use": "unchanged: correct-minus-shuffled satisfaction is .093 in both one- and six-vector prefix conditions",
+    "decision": "do not add more generic vectors or launch longer horizons; diagnose and strengthen query-specific generator use, with explicit facet alignment if structured vectors are retained"
+  },
+  "interpretation": [
+    "Six learned-query vectors substantially improve the auxiliary held-out goal objective but barely improve generation.",
+    "The decodability-use gap localizes the main failure to conditioning or query-specific readout rather than raw latent capacity.",
+    "Generic multi-vector expansion costs over three times as many active parameters as the one-vector prefix condition without producing any complete output.",
+    "The next mechanism should explicitly couple requested facets to latent memory or directly supervise vector-to-facet alignment rather than adding unspecialized vectors."
+  ]
+}

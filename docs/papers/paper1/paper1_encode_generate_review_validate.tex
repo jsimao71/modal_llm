@@ -223,6 +223,15 @@ The extended-budget comparison resolves the task-level ambiguity but not in favo
 
 The six-token continuous-prefix control does not repair the deficit. It reaches .172 satisfaction and zero exact match, compared with .176 and zero for matched late-layer additive Z. Its correct-minus-shuffled satisfaction effect rises slightly from .086 to .093, confirming latent use, but the .007 early-to-late change again occurs near floor. This negative result is especially informative because the prefix condition exposes more active conditioning parameters and makes six memory positions attention-addressable at every layer while preserving the same one-vector encoder. Presentation alone is therefore insufficient. The next 31-token isolation holds that six-token interface fixed while replacing the pooled vector with six learned-query encoded vectors, testing encoded-state structure separately from presentation. These learned vectors are not presumed facet-aligned; that stronger interpretation requires swaps and probes. Exact values are stored in \texttt{results/horizon\_32\_structured\_prefix\_iteration1.json}.
 
+Generic multi-vector encoding also fails the behavioral gate. Six learned-query goal vectors with the same six-token prefix reach .185 satisfaction and zero exact match, only .013 above the one-vector prefix despite increasing active parameters from 308,230 to 945,030. Yet held-out validation goal loss falls from .0726 to .00329, showing that the larger state supports the auxiliary facet objective. The correct-minus-shuffled satisfaction effect remains essentially unchanged at .093. This creates a sharp decodability--use separation: raw encoded capacity improves, but the generator still cannot reliably select the required facet value from latent memory. Adding more unspecialized vectors is therefore not justified. The next isolation should explicitly couple the requested facet to a memory slot or supervise vector-to-facet alignment before facet swaps or longer horizons. Exact values are stored in \texttt{results/horizon\_32\_multivector\_prefix\_iteration1.json}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=.76\linewidth]{figures/horizon_32_conditioning_comparison.pdf}
+\caption{Matched 31-token conditioning comparison. Neither continuous-prefix presentation nor six-vector encoding closes the large gap to direct text, while correct Z remains only modestly above shuffled Z. Source: \texttt{results/horizon\_32\_conditioning\_comparison\_iteration1.csv}.}
+\label{fig:horizon-conditioning}
+\end{figure}
+
 \begin{figure}[t]
 \centering
 \includegraphics[width=.72\linewidth]{figures/horizon_32_extended_quartiles.pdf}

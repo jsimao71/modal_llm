@@ -236,6 +236,17 @@ encoded-state structure separately from prefix length. The learned vectors are n
 assumed to be facet-aligned; facet-specific claims require subsequent swaps and probes.
 All task, optimization, seed, and evaluation settings remain matched.
 
+The multi-vector result is stored in
+[`results/horizon_32_multivector_prefix_iteration1.json`](results/horizon_32_multivector_prefix_iteration1.json),
+with the matched conditioning comparison in
+[`results/horizon_32_conditioning_comparison_iteration1.csv`](results/horizon_32_conditioning_comparison_iteration1.csv).
+Six vectors reach .185 satisfaction and zero exact match, only .013 above the
+one-vector prefix condition despite 3.07 times its active parameters. Validation goal
+loss falls sharply from .0726 to .00329, but the shuffled-Z effect remains .093. This
+decodability-use gap localizes the main failure to query-specific generator access,
+not raw latent capacity. Do not add more generic vectors or increase horizon next;
+test explicit facet-to-memory coupling or aligned supervision.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,
