@@ -1,0 +1,51 @@
+{
+  "status": "one-seed prefix-KV diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "comparison": [
+    {
+      "condition": "continuous_prefix_2",
+      "config_reference": "configs/paper1/z-only-prefix-2.yaml",
+      "conditioning_mode": "prefix",
+      "prefix_tokens": 2,
+      "exact_match": 0.15625,
+      "facet_satisfaction": 0.6149414122628514,
+      "shuffled_goal_effect": 0.0625,
+      "zero_goal_effect": 0.048828125,
+      "goal_probe_linear_test_facet_accuracy": 0.6559679037111334,
+      "facet_goal_substitution_success": 0.90625
+    },
+    {
+      "condition": "prefix_kv_2",
+      "config_reference": "configs/paper1/z-only-prefix-kv.yaml",
+      "conditioning_mode": "prefix_kv",
+      "prefix_tokens": 2,
+      "exact_match": 0.142578125,
+      "facet_satisfaction": 0.6091471414547414,
+      "shuffled_goal_effect": 0.048828125,
+      "zero_goal_effect": 0.041015625,
+      "random_goal_effect": 0.041015625,
+      "goal_probe_linear_test_facet_accuracy": 0.6414242728184554,
+      "goal_probe_linear_test_joint_exact_match": 0.166015625,
+      "facet_goal_substitution_success": 0.900390625,
+      "parameter_count": 190413,
+      "active_parameter_count": 160774
+    },
+    {
+      "condition": "single_vector_late_layers",
+      "config_reference": "configs/paper1/z-only-late-layers.yaml",
+      "conditioning_mode": "additive",
+      "exact_match": 0.1640625,
+      "facet_satisfaction": 0.6185221414198168,
+      "shuffled_goal_effect": 0.0546875,
+      "zero_goal_effect": 0.052734375,
+      "goal_probe_linear_test_facet_accuracy": 0.6359077231695085,
+      "facet_goal_substitution_success": 0.951171875
+    }
+  ],
+  "interpretation": [
+    "Two-memory prefix-KV is viable but does not improve over the matched two-token continuous prefix or single-vector late-layer additive conditioning.",
+    "Prefix-KV has lower exact match and a smaller correct-versus-shuffled effect than the two-token continuous prefix despite using more conditioning parameters.",
+    "Held-out goal decodability remains similar, so the difference again points mainly to generation-time use rather than representation content.",
+    "The shallow pilot does not justify carrying prefix-KV into larger sweeps unless later depth-specific evidence motivates revisiting layerwise attention memory."
+  ]
+}

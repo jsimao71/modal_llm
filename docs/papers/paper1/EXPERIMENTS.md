@@ -108,6 +108,11 @@ The prefix-KV condition keeps two goal-derived key/value memories available at e
 self-attention layer. Unlike the continuous-prefix condition, these memories are never
 queries and never occupy residual-stream output positions. A causal-mask regression
 test verifies that adding this memory path does not expose future generator tokens.
+Its checked-in pilot source is
+[`results/z_only_prefix_kv_pilot_iteration1.json`](results/z_only_prefix_kv_pilot_iteration1.json).
+At the matched one-seed scale it reaches .143 exact match, .609 facet satisfaction,
+and a .049 shuffled-goal effect. This is below the matched two-token continuous prefix
+and does not justify the additional layerwise K/V parameters in the shallow model.
 
 The checked-in source for the matched direct-text comparison is
 [`results/z_only_context_controls_pilot_iteration1.json`](results/z_only_context_controls_pilot_iteration1.json).
