@@ -1,0 +1,42 @@
+{
+  "status": "one-seed z-only reinjection diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "comparison": [
+    {
+      "condition": "input_only_strong_goal",
+      "config_reference": "2026-08-22 inline single-vector strong-goal pilot",
+      "baseline": "B5",
+      "goal_vectors": 1,
+      "z_injection_schedule": "input_only",
+      "exact_match": 0.1484375,
+      "facet_satisfaction": 0.6080729234090541,
+      "shuffled_goal_effect": 0.041015625,
+      "zero_goal_effect": 0.05859375,
+      "random_goal_effect": 0.08203125,
+      "goal_probe_linear_test_facet_accuracy": 0.6434302908726178,
+      "goal_probe_linear_test_joint_exact_match": 0.166015625,
+      "facet_goal_substitution_success": 0.91015625
+    },
+    {
+      "condition": "all_layers_strong_goal",
+      "config_reference": "configs/paper1/z-only-all-layers.yaml",
+      "baseline": "B5",
+      "goal_vectors": 1,
+      "z_injection_schedule": "all_layers",
+      "exact_match": 0.119140625,
+      "facet_satisfaction": 0.5260416727978736,
+      "shuffled_goal_effect": 0.02734375,
+      "zero_goal_effect": 0.05078125,
+      "random_goal_effect": 0.099609375,
+      "goal_probe_linear_test_facet_accuracy": 0.6394182547642929,
+      "goal_probe_linear_test_joint_exact_match": 0.171875,
+      "facet_goal_substitution_success": 0.8359375
+    }
+  ],
+  "interpretation": [
+    "Naive all-layer additive reinjection does not improve the current z-only strong-goal baseline on this one-seed held-out pilot.",
+    "Task exact match and facet satisfaction both decrease relative to input-only conditioning.",
+    "Correct-versus-shuffled and zero-goal causal effects also decrease, so repeated access alone is not sufficient under this additive mechanism.",
+    "This points toward either a more selective reinjection schedule such as periodic or late-layer access, or a different conditioning mechanism such as prefix-style or KV-based control."
+  ]
+}
