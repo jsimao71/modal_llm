@@ -25,22 +25,6 @@ from .metrics import average_precision, binary_auroc, brier_score, expected_cali
 from .model import BASELINES, ModeTransformer
 
 
-def _goal_prompt(batch: dict[str, Any]) -> torch.Tensor:
-    return batch.get("goal_prompt", batch["prompt"])
-
-
-def _generation_prompt(batch: dict[str, Any]) -> torch.Tensor:
-    return batch.get("generation_prompt", batch["prompt"])
-
-
-def _paraphrase_goal_prompt(batch: dict[str, Any]) -> torch.Tensor:
-    return batch.get("paraphrase_goal_prompt", batch.get("paraphrase_prompt", batch["prompt"]))
-
-
-def _counterfactual_goal_prompt(batch: dict[str, Any]) -> torch.Tensor:
-    return batch.get("counterfactual_goal_prompt", batch.get("counterfactual_prompt", batch["prompt"]))
-
-
 def _device(name: str) -> torch.device:
     if name == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -102,7 +86,8 @@ def _collect_goal_states(
     active: list[torch.Tensor] = []
     for raw in loader:
         batch = _move(raw, device)
-        _, goal = model.encode(_goal_prompt(batch))
+        _, goal_prompt = model.prompt_channels(batch)
+        _, goal = model.encode(goal_prompt)
         assert goal is not None
         states.append(goal.detach().cpu().reshape(goal.shape[0], -1))
         bits.append(batch["bits"].detach().cpu())
@@ -434,8 +419,7 @@ def evaluate(
     constant_goal: torch.Tensor | None = None
     for raw in loader:
         batch = _move(raw, device)
-        generation_prompt = _generation_prompt(batch)
-        goal_prompt = _goal_prompt(batch)
+        generation_prompt, goal_prompt = model.prompt_channels(batch)
         before_base = model.compute_stats()
         generated, goal, _ = model.generate(
             generation_prompt, batch["target"].shape[1], goal_prompt=goal_prompt
@@ -488,7 +472,7 @@ def evaluate(
             shuffle_exact.extend((shuffle_ok | ~active).all(1).float().cpu().tolist())
             constant_exact.extend((constant_ok | ~active).all(1).float().cpu().tolist())
             random_exact.extend((random_ok | ~active).all(1).float().cpu().tolist())
-            paraphrase_goals = _paraphrase_goal_prompt(batch)
+            paraphrase_goals = model.paraphrase_goal_channel(batch)
             _, paraphrase_goal = model.encode(paraphrase_goals)
             goal_flat = goal.reshape(goal.shape[0], -1)
             paraphrase_flat = paraphrase_goal.reshape(paraphrase_goal.shape[0], -1)
@@ -509,7 +493,7 @@ def evaluate(
             )
             paraphrase_goal_exact.extend((paraphrase_ok | ~active).all(1).float().cpu().tolist())
 
-            _, counterfactual_goal = model.encode(_counterfactual_goal_prompt(batch))
+            _, counterfactual_goal = model.encode(model.counterfactual_goal_channel(batch))
             substituted, _, _ = model.generate(
                 generation_prompt, batch["target"].shape[1], forced_goal=counterfactual_goal
             )
@@ -670,8 +654,13 @@ def verify_checkpoint_reload(
     sample_count = min(8, len(dataset))
     raw = collate_examples([dataset[index] for index in range(sample_count)])
     batch = _move(raw, device)
-    expected, _, _ = model.generate(batch["prompt"], batch["target"].shape[1])
-    actual, _, _ = reloaded.generate(batch["prompt"], batch["target"].shape[1])
+    generation_prompt, goal_prompt = model.prompt_channels(batch)
+    expected, _, _ = model.generate(
+        generation_prompt, batch["target"].shape[1], goal_prompt=goal_prompt
+    )
+    actual, _, _ = reloaded.generate(
+        generation_prompt, batch["target"].shape[1], goal_prompt=goal_prompt
+    )
     states_equal = all(
         torch.equal(value, reloaded.state_dict()[name])
         for name, value in model.state_dict().items()

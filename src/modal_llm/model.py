@@ -229,6 +229,33 @@ class ModeTransformer(nn.Module):
     def _flatten_state(state: torch.Tensor) -> torch.Tensor:
         return state.reshape(state.shape[0], -1)
 
+    def prompt_channels(
+        self, batch: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Select direct or split generation/goal channels for this condition."""
+
+        if self.generation_prompt_only:
+            return (
+                batch.get("generation_prompt", batch["prompt"]),
+                batch.get("goal_prompt", batch["prompt"]),
+            )
+        return batch["prompt"], batch["prompt"]
+
+    def paraphrase_goal_channel(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        if self.generation_prompt_only:
+            return batch.get(
+                "paraphrase_goal_prompt", batch.get("paraphrase_prompt", batch["prompt"])
+            )
+        return batch.get("paraphrase_prompt", batch["prompt"])
+
+    def counterfactual_goal_channel(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        if self.generation_prompt_only:
+            return batch.get(
+                "counterfactual_goal_prompt",
+                batch.get("counterfactual_prompt", batch["prompt"]),
+            )
+        return batch.get("counterfactual_prompt", batch["prompt"])
+
     def _extract_state(
         self,
         hidden: torch.Tensor,
@@ -441,7 +468,7 @@ class ModeTransformer(nn.Module):
         facet = (raw * batch["active_facets"]).sum() / batch["active_facets"].sum()
         result = {"goal": facet}
         if invariance_weight > 0:
-            goal_prompt = batch.get("paraphrase_goal_prompt", batch["paraphrase_prompt"])
+            goal_prompt = self.paraphrase_goal_channel(batch)
             _, paraphrase_goal = self.encode(goal_prompt)
             invariance = (
                 1.0 - F.cosine_similarity(goal, paraphrase_goal, dim=-1)
@@ -457,7 +484,8 @@ class ModeTransformer(nn.Module):
     ) -> dict[str, torch.Tensor]:
         if not self.spec.use_goal:
             raise RuntimeError(f"{self.spec.name} does not use a goal state")
-        _, goal = self.encode(batch.get("goal_prompt", batch["prompt"]))
+        _, goal_prompt = self.prompt_channels(batch)
+        _, goal = self.encode(goal_prompt)
         losses = self._goal_losses(goal, batch, invariance_weight)
         total = losses["goal"] + invariance_weight * losses.get(
             "goal_invariance", goal.new_zeros(())
@@ -466,8 +494,7 @@ class ModeTransformer(nn.Module):
 
     def losses(self, batch: dict[str, torch.Tensor], weights: dict[str, float]) -> dict[str, torch.Tensor]:
         target = batch["target"]
-        generation_prompt = batch.get("generation_prompt", batch["prompt"])
-        goal_prompt = batch.get("goal_prompt", batch["prompt"])
+        generation_prompt, goal_prompt = self.prompt_channels(batch)
         validation_prompt = batch["prompt"]
         decoder_input = torch.cat(
             [torch.full_like(target[:, :1], self.vocab.OUT_BOS), target[:, :-1]], dim=1

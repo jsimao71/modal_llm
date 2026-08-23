@@ -1,0 +1,43 @@
+{
+  "status": "one-seed context-control diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "comparison": [
+    {
+      "condition": "text_prefix_direct_goal",
+      "config_reference": "configs/paper1/text-prefix.yaml",
+      "baseline": "B0",
+      "goal_channel": "ordinary goal tokens in the full causal prompt",
+      "exact_match": 0.1015625,
+      "facet_satisfaction": 0.5184244848496746,
+      "base_generation_token_positions": 135618.0,
+      "parameter_count": 165837,
+      "active_parameter_count": 111168
+    },
+    {
+      "condition": "single_vector_late_layers",
+      "config_reference": "configs/paper1/z-only-late-layers.yaml",
+      "baseline": "B5",
+      "goal_channel": "single-vector Z with late-layer additive access",
+      "exact_match": 0.1640625,
+      "facet_satisfaction": 0.6185221414198168,
+      "shuffled_goal_effect": 0.0546875,
+      "facet_goal_substitution_success": 0.951171875
+    },
+    {
+      "condition": "continuous_prefix_4",
+      "config_reference": "configs/paper1/z-only-prefix.yaml",
+      "baseline": "B5",
+      "goal_channel": "four continuous prefix vectors projected from Z",
+      "exact_match": 0.162109375,
+      "facet_satisfaction": 0.6235351619543508,
+      "shuffled_goal_effect": 0.056640625,
+      "facet_goal_substitution_success": 0.888671875
+    }
+  ],
+  "interpretation": [
+    "The direct text-prefix control underperforms both the best additive late-layer Z condition and the four-token continuous-prefix condition at the matched one-seed pilot scale.",
+    "This does not establish general superiority of latent conditioning: the direct control processes a longer held-out prompt containing distractors, while the latent variants separately encode the goal and generate from a shorter content prompt.",
+    "The result supports continuing the conditioning-mechanism diagnostics and motivates the planned direct-goal exposure curve, which will test whether direct symbolic access causes bypass when introduced into the same Z-conditioned model.",
+    "Prompt routing is explicitly controlled by generation_prompt_only and covered by a regression test so direct and Z-only conditions cannot silently share the wrong input channel."
+  ]
+}

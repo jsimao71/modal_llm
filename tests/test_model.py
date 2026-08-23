@@ -104,6 +104,30 @@ def test_generation_prompt_only_uses_content_prefix_with_goal_encoding():
     assert calls == 4
 
 
+def test_prompt_channels_preserve_direct_text_and_z_only_split():
+    dataset, batch = _batch()
+    direct = ModeTransformer(
+        dataset.vocab, "B0", d_model=16, nhead=4, layers=1, dropout=0.0
+    )
+    z_only = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=1,
+        dropout=0.0,
+        generation_prompt_only=True,
+    )
+
+    direct_generation, direct_goal = direct.prompt_channels(batch)
+    z_generation, z_goal = z_only.prompt_channels(batch)
+
+    assert torch.equal(direct_generation, batch["prompt"])
+    assert torch.equal(direct_goal, batch["prompt"])
+    assert torch.equal(z_generation, batch["generation_prompt"])
+    assert torch.equal(z_goal, batch["goal_prompt"])
+
+
 def test_multivector_goal_state_shapes_and_validation_are_supported():
     dataset, batch = _batch()
     model = ModeTransformer(

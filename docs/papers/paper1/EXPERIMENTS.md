@@ -42,6 +42,7 @@ hypotheses.
 ## Next iteration: Z-only causal gate
 
 ```powershell
+modal-llm train-eval --config configs/paper1/text-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-gate.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector.yaml
 modal-llm train-eval --config configs/paper1/z-only-all-layers.yaml
@@ -53,7 +54,10 @@ modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-8.yaml
 ```
 
-This configuration removes token-level goal access from the generator by using the
+The text-prefix configuration is the matched direct-channel control: its causal
+generator receives the complete rendered task prompt, including ordinary goal tokens,
+and no latent goal state. Configurations with `generation_prompt_only: true` instead
+remove token-level goal access from the generator by using the
 separate `generation_prompt` content channel together with `goal_prompt` encoding and
 latched `Z_G` conditioning. The run reports correct-, shuffled-, zero-, constant-, and
 random-goal interventions, plus frozen-goal linear and MLP probes over held-out facet
@@ -98,6 +102,14 @@ The first follow-up after the base prefix pilot is a small prefix-token sweep. C
 2, 4, and 8 latent prefix tokens under the same held-out Z-only strong-goal setting to
 determine whether the competitive prefix result is robust or narrowly tuned to one
 prefix length.
+
+The checked-in source for the matched direct-text comparison is
+[`results/z_only_context_controls_pilot_iteration1.json`](results/z_only_context_controls_pilot_iteration1.json).
+At this one-seed pilot scale the direct causal text prefix reaches .102 exact match and
+.518 facet satisfaction, below both single-vector late-layer Z and the four-vector
+continuous prefix. This remains an architecture diagnostic rather than a general claim:
+the text condition processes a longer distractor-bearing prompt, whereas the latent
+conditions separately encode the goal and generate from the content channel.
 
 ## Main model and five-seed baseline suite
 
