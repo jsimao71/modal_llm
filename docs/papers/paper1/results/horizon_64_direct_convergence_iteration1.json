@@ -1,0 +1,42 @@
+{
+  "status": "one-seed 61-output-token direct-text convergence and learnability gate; not a headline result",
+  "date": "2026-08-23",
+  "condition": {
+    "config_reference": "configs/paper1/horizon-64-direct-converged.yaml",
+    "baseline": "B0",
+    "run_reference": "results/paper1-horizon-64-direct-converged/B0/20260823T174835882030Z-seed0",
+    "source_commit": "9119edf",
+    "target_output_length": 61,
+    "target_repetitions": 10,
+    "best_epoch": 160,
+    "completed_joint_epochs": 160,
+    "parameter_count": 297038,
+    "active_parameter_count": 176704,
+    "validation_lm": 0.001935272681294009,
+    "task_exact_match": 1.0,
+    "task_facet_satisfaction": 1.0,
+    "quartile_satisfaction": [1.0, 1.0, 1.0, 1.0],
+    "early_minus_late_drift": 0.0,
+    "checkpoint_reload_verified": true,
+    "training_wall_seconds": 2287.06223900005
+  },
+  "trajectory_audit": {
+    "epoch_100_validation_lm": 1.0998875461518764,
+    "epoch_120_validation_lm": 0.47341344598680735,
+    "epoch_140_validation_lm": 0.0072667667554924265,
+    "epoch_160_validation_lm": 0.001935272681294009,
+    "reproducibility": "epochs 100 and 120 exactly reproduce the prior 120-epoch run at reported precision"
+  },
+  "gate_audit": {
+    "task_learnability": "pass at one seed: exact match, aggregate facet satisfaction, and every temporal quartile equal 1.0",
+    "persistence_at_61_tokens": "pass for direct text: all quartiles equal 1.0 with zero early-minus-late drift",
+    "optimization": "behaviorally saturated, although epoch 160 remains selected and validation LM continues to improve",
+    "causal_z_use": "not yet tested at this horizon",
+    "decision": "run signaled facet-slot Z with the matched 160-epoch ceiling, then evaluate shuffled Z and one-slot counterfactuals"
+  },
+  "interpretation": [
+    "The failed 120-epoch direct gate was delayed optimization, not a demonstrated horizon-capacity limit.",
+    "The two-layer direct model can generate the complete 61-token schedule without temporal degradation once sufficiently optimized.",
+    "A matched signaled-Z run is now licensed, but no Z horizon conclusion follows from direct text alone."
+  ]
+}

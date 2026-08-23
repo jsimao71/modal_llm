@@ -331,6 +331,14 @@ The direct convergence extension changes only the joint-training ceiling from 12
 seed rather than reloading the epoch-120 checkpoint because checkpoints do not preserve
 AdamW optimizer state; resetting optimizer moments would introduce an unplanned change.
 
+The extension passes the direct 61-token learnability gate: exact match, aggregate
+satisfaction, and all four temporal quartiles are 1.0, with zero drift. Validation LM
+falls to .00194 at the selected epoch 160. The trajectory exactly reproduces the prior
+run through epoch 120 at reported precision (.473413), showing that the earlier failure
+was delayed optimization rather than demonstrated horizon capacity. The matched
+signaled facet-slot Z condition may now run with the same 160-epoch ceiling. Exact
+values are in `results/horizon_64_direct_convergence_iteration1.json`.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,
