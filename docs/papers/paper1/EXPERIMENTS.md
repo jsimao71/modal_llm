@@ -283,6 +283,16 @@ remains selectable and reproducible. A gain would localize the deficit to latent
 signaling; another failure would strengthen the case for an optimization-compatibility
 diagnostic.
 
+The signaled-slot result is stored in
+[`results/horizon_32_facet_slot_signaled_iteration1.json`](results/horizon_32_facet_slot_signaled_iteration1.json).
+Adding slot identity and generation position raises correct-Z satisfaction from .161
+to .743 and the shuffled-Z effect from .081 to .369. A counterfactual slot swap now
+achieves .513 satisfaction on selected-facet positions and .738 on untouched positions,
+large gains from .008 and .187. However, task and counterfactual exact match remain
+zero, epoch 80 is selected, and validation LM is still declining at .308. This is the
+first strong long-schedule Z mechanism result, but it is not converged or complete.
+Extend this exact condition at 31 tokens before increasing horizon.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,

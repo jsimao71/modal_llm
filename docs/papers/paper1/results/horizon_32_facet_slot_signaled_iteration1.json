@@ -1,0 +1,65 @@
+{
+  "status": "one-seed 31-output-token signaled facet-slot diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "condition": {
+    "config_reference": "configs/paper1/horizon-32-z-facet-slot-signaled.yaml",
+    "baseline": "B5",
+    "run_reference": "results/paper1-horizon-32-z-facet-slot-signaled/B5/20260823T163044593812Z-seed0",
+    "source_commit": "e3707c4",
+    "goal_pooling": "facet_tokens",
+    "conditioning_mode": "slot_prefix",
+    "slot_prefix_signals": true,
+    "goal_vectors": 6,
+    "prefix_tokens": 6,
+    "best_epoch": 80,
+    "completed_joint_epochs": 80,
+    "goal_warmup_epochs": 10,
+    "parameter_count": 1552398,
+    "active_parameter_count": 181313,
+    "validation_goal": 0.006551471509737894,
+    "validation_lm": 0.30756083317101,
+    "task_exact_match": 0.0,
+    "task_facet_satisfaction": 0.7429687520489097,
+    "quartile_satisfaction": [
+      0.775390625,
+      0.662109375,
+      0.7421875151339918,
+      0.7991071548312902
+    ],
+    "early_minus_late_drift": -0.023716529831290245,
+    "shuffled_goal_exact_match": 0.0,
+    "shuffled_goal_facet_satisfaction": 0.3742187569732778,
+    "correct_minus_shuffled_facet_effect": 0.3687499950756319,
+    "facet_slot_swap_exact_match": 0.0,
+    "facet_slot_swap_selected_satisfaction": 0.5125000079860911,
+    "facet_slot_swap_untouched_satisfaction": 0.7375000016763806,
+    "checkpoint_reload_verified": true
+  },
+  "matched_references": {
+    "unsignaled_facet_slot_facet_satisfaction": 0.16145833852351643,
+    "unsignaled_facet_slot_shuffled_effect": 0.08098958563641645,
+    "unsignaled_facet_slot_swap_selected_satisfaction": 0.007812500116415322,
+    "unsignaled_facet_slot_swap_untouched_satisfaction": 0.18687499896623194,
+    "direct_text_facet_satisfaction": 1.0,
+    "direct_text_exact_match": 1.0
+  },
+  "comparisons": {
+    "facet_gain_over_unsignaled_slots": 0.5815104135253932,
+    "shuffled_effect_gain_over_unsignaled_slots": 0.28776040943921547,
+    "selected_slot_swap_gain_over_unsignaled_slots": 0.5046875078696758,
+    "untouched_slot_swap_gain_over_unsignaled_slots": 0.5506250027101487
+  },
+  "gate_audit": {
+    "latent_token_signaling": "pass at one seed: adding slot identity and generation position raises satisfaction from .161 to .743",
+    "causal_z_use": "pass provisionally: correct-minus-shuffled satisfaction rises to .369",
+    "localized_counterfactual_control": "improved but incomplete: selected and untouched satisfaction are .513 and .738, while full counterfactual exact match remains zero",
+    "task_optimization": "not converged: epoch 80 is selected and validation LM is still declining",
+    "decision": "extend signaled-slot optimization at 31 tokens before longer horizons; do not claim complete localized control yet"
+  },
+  "interpretation": [
+    "The dominant failure was not compression alone: latent memory required explicit slot identity and generation-position signals to become usable.",
+    "Signaled facet slots produce the first large long-schedule Z effect and substantially localized slot-swap behavior.",
+    "The model still makes enough distributed errors that no complete 31-token or counterfactual sequence is correct.",
+    "Because validation loss continues falling at the budget boundary, the next experiment should extend this exact condition rather than alter architecture or increase horizon."
+  ]
+}
