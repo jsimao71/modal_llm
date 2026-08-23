@@ -46,6 +46,7 @@ modal-llm train-eval --config configs/paper1/z-only-gate.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector.yaml
 modal-llm train-eval --config configs/paper1/z-only-all-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-periodic.yaml
+modal-llm train-eval --config configs/paper1/z-only-late-layers.yaml
 ```
 
 This configuration removes token-level goal access from the generator by using the
@@ -71,6 +72,11 @@ The periodic variant is the next selective persistence control. It re-injects th
 latched goal condition every $K$ layers, with $K=2$ in the first pilot, to test whether
 less intrusive repeated access can recover causal benefits without the interference seen
 under all-layer additive reinjection.
+
+The late-layer variant is the follow-up top-down-control diagnostic. It re-injects the
+same latent only in the final quarter of generation layers, asking whether a late
+goal reminder is more useful than early or repeated additive conditioning in this small
+shared-weight setting.
 
 ## Main model and five-seed baseline suite
 

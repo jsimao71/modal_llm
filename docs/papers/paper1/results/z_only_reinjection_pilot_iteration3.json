@@ -1,0 +1,74 @@
+{
+  "status": "one-seed z-only reinjection diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "comparison": [
+    {
+      "condition": "input_only_strong_goal",
+      "config_reference": "2026-08-22 inline single-vector strong-goal pilot",
+      "baseline": "B5",
+      "goal_vectors": 1,
+      "z_injection_schedule": "input_only",
+      "exact_match": 0.1484375,
+      "facet_satisfaction": 0.6080729234090541,
+      "shuffled_goal_effect": 0.041015625,
+      "zero_goal_effect": 0.05859375,
+      "random_goal_effect": 0.08203125,
+      "goal_probe_linear_test_facet_accuracy": 0.6434302908726178,
+      "goal_probe_linear_test_joint_exact_match": 0.166015625,
+      "facet_goal_substitution_success": 0.91015625
+    },
+    {
+      "condition": "all_layers_strong_goal",
+      "config_reference": "configs/paper1/z-only-all-layers.yaml",
+      "baseline": "B5",
+      "goal_vectors": 1,
+      "z_injection_schedule": "all_layers",
+      "exact_match": 0.119140625,
+      "facet_satisfaction": 0.5260416727978736,
+      "shuffled_goal_effect": 0.02734375,
+      "zero_goal_effect": 0.05078125,
+      "random_goal_effect": 0.099609375,
+      "goal_probe_linear_test_facet_accuracy": 0.6394182547642929,
+      "goal_probe_linear_test_joint_exact_match": 0.171875,
+      "facet_goal_substitution_success": 0.8359375
+    },
+    {
+      "condition": "periodic_strong_goal",
+      "config_reference": "configs/paper1/z-only-periodic.yaml",
+      "baseline": "B5",
+      "goal_vectors": 1,
+      "z_injection_schedule": "periodic",
+      "z_injection_period": 2,
+      "exact_match": 0.12109375,
+      "facet_satisfaction": 0.5535481837869156,
+      "shuffled_goal_effect": 0.03125,
+      "zero_goal_effect": 0.01953125,
+      "random_goal_effect": 0.08203125,
+      "goal_probe_linear_test_facet_accuracy": 0.6374122367101304,
+      "goal_probe_linear_test_joint_exact_match": 0.16796875,
+      "facet_goal_substitution_success": 0.873046875
+    },
+    {
+      "condition": "late_layers_strong_goal",
+      "config_reference": "configs/paper1/z-only-late-layers.yaml",
+      "baseline": "B5",
+      "goal_vectors": 1,
+      "z_injection_schedule": "late_layers",
+      "exact_match": 0.1640625,
+      "facet_satisfaction": 0.6185221414198168,
+      "shuffled_goal_effect": 0.0546875,
+      "zero_goal_effect": 0.052734375,
+      "random_goal_effect": 0.087890625,
+      "goal_probe_linear_test_facet_accuracy": 0.6359077231695085,
+      "goal_probe_linear_test_joint_exact_match": 0.169921875,
+      "facet_goal_substitution_success": 0.951171875
+    }
+  ],
+  "interpretation": [
+    "Naive all-layer additive reinjection hurts both task quality and causal signatures relative to input-only conditioning.",
+    "Periodic reinjection every two layers partially recovers task quality and the shuffled-goal effect relative to all-layer reinjection, but it remains below the input-only baseline.",
+    "Late-layer reinjection is the first reinjection schedule that improves on the input-only baseline in this small held-out setting: exact match rises to .164, facet satisfaction to .619, the shuffled-goal effect to .055, and counterfactual facet substitution success to .951.",
+    "Held-out probe accuracy stays nearly unchanged across all four conditions, so the main differences come from how generation uses the latent rather than from a large change in decodability.",
+    "The current evidence supports a top-down-control interpretation more than a simple repeated-access interpretation: late availability helps, while constant or early repeated additive availability does not."
+  ]
+}
