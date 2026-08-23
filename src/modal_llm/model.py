@@ -71,6 +71,8 @@ class ModeTransformer(nn.Module):
         goal_vectors: int = 1,
         z_injection_schedule: str = "input_only",
         z_injection_period: int = 2,
+        conditioning_mode: str = "additive",
+        prefix_tokens: int = 4,
     ) -> None:
         super().__init__()
         if baseline not in BASELINES:
@@ -83,6 +85,8 @@ class ModeTransformer(nn.Module):
         self.latent_width = d_model * goal_vectors
         self.z_injection_schedule = z_injection_schedule
         self.z_injection_period = z_injection_period
+        self.conditioning_mode = conditioning_mode
+        self.prefix_tokens = prefix_tokens
         self.token_embedding = nn.Embedding(vocab.size, d_model, padding_idx=vocab.PAD)
         self.position_embedding = nn.Embedding(max_length, d_model)
         self.mode_embedding = nn.Embedding(len(MODES), d_model)
@@ -97,6 +101,7 @@ class ModeTransformer(nn.Module):
         self.goal_queries = nn.Parameter(torch.randn(goal_vectors, d_model) * 0.02)
         self.review_queries = nn.Parameter(torch.randn(goal_vectors, d_model) * 0.02)
         self.goal_condition = nn.Linear(self.latent_width, d_model, bias=False)
+        self.goal_prefix = nn.Linear(self.latent_width, prefix_tokens * d_model, bias=False)
         self.match_control = nn.Sequential(
             nn.Linear(d_model, d_model), nn.GELU(), nn.Linear(d_model, d_model)
         )
@@ -147,7 +152,7 @@ class ModeTransformer(nn.Module):
         if self.spec.matched_mlp:
             modules.append(self.match_control)
         if self.spec.use_goal:
-            modules.extend([self.goal_head, self.goal_condition, self.facet_head])
+            modules.extend([self.goal_head, self.goal_condition, self.goal_prefix, self.facet_head])
         if self.spec.review is not None:
             modules.append(self.review_head)
         if self.spec.validator is not None:
@@ -166,6 +171,8 @@ class ModeTransformer(nn.Module):
         )
 
     def _selected_goal_layers(self) -> tuple[int, ...]:
+        if self.conditioning_mode != "additive":
+            return ()
         count = len(self.layers)
         if self.z_injection_schedule == "input_only":
             return ()
@@ -278,9 +285,33 @@ class ModeTransformer(nn.Module):
         effective_goal = forced_goal if forced_goal is not None else goal
         conditioning = None
         if self.spec.use_goal and effective_goal is not None:
-            conditioning = self.goal_condition(self._flatten_state(effective_goal)).unsqueeze(1)
-            if self.z_injection_schedule == "input_only":
-                prefix = prefix + conditioning
+            flattened = self._flatten_state(effective_goal)
+            if self.conditioning_mode == "additive":
+                conditioning = self.goal_condition(flattened).unsqueeze(1)
+                if self.z_injection_schedule == "input_only":
+                    prefix = prefix + conditioning
+            elif self.conditioning_mode == "prefix":
+                latent_prefix = self.goal_prefix(flattened).reshape(
+                    prompt.shape[0], self.prefix_tokens, self.d_model
+                )
+                latent_prefix = (
+                    latent_prefix
+                    + self.mode_embedding.weight[MODES["generate"]][None, None, :]
+                )
+                prefix = torch.cat([prefix, latent_prefix], dim=1)
+                prefix_padding = torch.cat(
+                    [
+                        prefix_padding,
+                        torch.zeros(
+                            (prompt.shape[0], self.prefix_tokens),
+                            dtype=torch.bool,
+                            device=prompt.device,
+                        ),
+                    ],
+                    dim=1,
+                )
+            else:
+                raise ValueError(f"Unknown conditioning_mode {self.conditioning_mode!r}")
         return GenerationContext(prefix, prefix_padding, prefix.shape[1], goal, conditioning)
 
     def generation_forward(

@@ -83,6 +83,8 @@ def _model(config: dict[str, Any], dataset: ConstraintDataset) -> ModeTransforme
         goal_vectors=int(values.get("goal_vectors", 1)),
         z_injection_schedule=str(values.get("z_injection_schedule", "input_only")),
         z_injection_period=int(values.get("z_injection_period", 2)),
+        conditioning_mode=str(values.get("conditioning_mode", "additive")),
+        prefix_tokens=int(values.get("prefix_tokens", 4)),
     )
 
 

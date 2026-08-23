@@ -48,6 +48,7 @@ modal-llm train-eval --config configs/paper1/z-only-all-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-periodic.yaml
 modal-llm train-eval --config configs/paper1/z-only-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
+modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 ```
 
 This configuration removes token-level goal access from the generator by using the
@@ -84,6 +85,12 @@ far: a richer latent bank of goal vectors and late-layer goal availability. Use 
 test whether the late top-down-control benefit compounds with increased latent capacity,
 or whether the two mechanisms mainly substitute for one another in this small pilot
 regime.
+
+The prefix variant is the first conditioning-mechanism diagnostic beyond additive
+conditioning. It turns the latent goal state into a small bank of learned continuous
+prefix tokens that are prepended to the generator context, testing whether persistent
+goal access is better provided through a dedicated latent prefix than through additive
+state injection.
 
 ## Main model and five-seed baseline suite
 

@@ -192,6 +192,35 @@ def test_all_layer_goal_injection_path_runs_and_preserves_shapes():
     assert calls == 4
 
 
+def test_prefix_conditioning_adds_latent_tokens_without_reencoding():
+    dataset, batch = _batch()
+    model = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=2,
+        dropout=0.0,
+        generation_prompt_only=True,
+        conditioning_mode="prefix",
+        prefix_tokens=3,
+    ).eval()
+    context = model.prepare_generation(
+        batch["generation_prompt"], goal_prompt=batch["goal_prompt"]
+    )
+    assert context.conditioning is None
+    assert context.prefix_length == batch["generation_prompt"].shape[1] + 3
+    model.reset_compute_stats()
+    generated, goal, calls = model.generate(
+        batch["generation_prompt"],
+        max_tokens=3,
+        goal_prompt=batch["goal_prompt"],
+    )
+    assert generated.shape == (2, 3)
+    assert goal is not None
+    assert calls == 4
+
+
 def test_seeded_initialization_and_optimizer_step_are_deterministic():
     dataset, batch = _batch()
 
