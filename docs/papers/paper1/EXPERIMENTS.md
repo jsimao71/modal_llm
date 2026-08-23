@@ -67,6 +67,7 @@ modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-signaled-co
 modal-llm train-eval --config configs/paper1/horizon-64-direct.yaml
 modal-llm train-eval --config configs/paper1/horizon-64-direct-converged.yaml
 modal-llm train-eval --config configs/paper1/horizon-64-z-facet-slot-signaled.yaml
+modal-llm train-eval --config configs/paper1/horizon-64-z-facet-slot-signaled-converged.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -338,6 +339,11 @@ run through epoch 120 at reported precision (.473413), showing that the earlier 
 was delayed optimization rather than demonstrated horizon capacity. The matched
 signaled facet-slot Z condition may now run with the same 160-epoch ceiling. Exact
 values are in `results/horizon_64_direct_convergence_iteration1.json`.
+
+The matched Z run uses the same 160-epoch ceiling as the passed direct gate. Relative
+to the staged 120-epoch Z configuration, only that ceiling changes. Correct-Z task
+behavior remains the first gate; shuffled-Z necessity and one-slot counterfactual
+locality are interpreted only if correct Z learns the 61-token schedule.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
