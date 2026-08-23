@@ -59,6 +59,7 @@ modal-llm train-eval --config configs/paper1/horizon-32-z.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-direct.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-converged.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-direct-converged.yaml
+modal-llm train-eval --config configs/paper1/horizon-32-z-prefix-6.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -213,6 +214,11 @@ Correct Z reaches only .176 satisfaction and zero exact match, barely above its
 The single additive vector is therefore used but fails to support accurate
 query-dependent retrieval over the varying schedule. Longer horizons remain gated;
 the next comparison should test structured latent access at the same 31-token point.
+The first structured-access control keeps the single-vector encoder fixed and projects
+that Z into six continuous prefix tokens. Generated positions can attend to these
+latent memory tokens at every layer, isolating addressable presentation from increased
+encoder-state capacity. It uses the same 80-epoch ceiling and all other horizon data
+and optimizer settings.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
