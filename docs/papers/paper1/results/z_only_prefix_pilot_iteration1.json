@@ -1,0 +1,51 @@
+{
+  "status": "one-seed z-only conditioning-mechanism diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "comparison": [
+    {
+      "condition": "input_only_additive",
+      "config_reference": "2026-08-22 inline single-vector strong-goal pilot",
+      "baseline": "B5",
+      "conditioning_mode": "additive",
+      "z_injection_schedule": "input_only",
+      "exact_match": 0.1484375,
+      "facet_satisfaction": 0.6080729234090541,
+      "shuffled_goal_effect": 0.041015625,
+      "zero_goal_effect": 0.05859375,
+      "goal_probe_linear_test_facet_accuracy": 0.6434302908726178,
+      "facet_goal_substitution_success": 0.91015625
+    },
+    {
+      "condition": "late_layers_additive",
+      "config_reference": "configs/paper1/z-only-late-layers.yaml",
+      "baseline": "B5",
+      "conditioning_mode": "additive",
+      "z_injection_schedule": "late_layers",
+      "exact_match": 0.1640625,
+      "facet_satisfaction": 0.6185221414198168,
+      "shuffled_goal_effect": 0.0546875,
+      "zero_goal_effect": 0.052734375,
+      "goal_probe_linear_test_facet_accuracy": 0.6359077231695085,
+      "facet_goal_substitution_success": 0.951171875
+    },
+    {
+      "condition": "prefix_conditioning",
+      "config_reference": "configs/paper1/z-only-prefix.yaml",
+      "baseline": "B5",
+      "conditioning_mode": "prefix",
+      "prefix_tokens": 4,
+      "exact_match": 0.162109375,
+      "facet_satisfaction": 0.6235351619543508,
+      "shuffled_goal_effect": 0.056640625,
+      "zero_goal_effect": 0.05078125,
+      "goal_probe_linear_test_facet_accuracy": 0.6449348044132397,
+      "facet_goal_substitution_success": 0.888671875
+    }
+  ],
+  "interpretation": [
+    "Prefix-style conditioning is the first non-additive mechanism tested in the z-only setting.",
+    "On this one-seed held-out pilot it is competitive with the best additive late-layer schedule: exact match is slightly lower (.162 versus .164), facet satisfaction is slightly higher (.624 versus .619), and the shuffled-goal effect is slightly higher (.057 versus .055).",
+    "Because held-out probe accuracy remains similar, the difference again appears to come from how generation uses the latent rather than from a large change in decodability.",
+    "The current evidence therefore supports two viable directions for the next stage: selective late additive access and continuous prefix conditioning."
+  ]
+}
