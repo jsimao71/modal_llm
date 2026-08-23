@@ -357,6 +357,23 @@ and generation-time injection at the learned 31/61-token boundary. Exact values 
 `results/horizon_64_z_facet_slot_signaled_convergence_iteration1.json`; the compact
 comparison is in `results/horizon_persistence_iteration1.csv`.
 
+### Current gate audit and remaining queue
+
+The current one-seed iteration establishes strong held-out facet decodability and
+correct-versus-shuffled causal dependence at 31 tokens, but not persistence or localized
+control at 61 tokens. Formal frozen-Z linear/MLP probes remain required; the low
+held-out goal loss is not a substitute. The immediate next controls are facet-aligned
+persistent prefix-KV or repeated generation-time slot access, plus a matched control
+that separates repeated slot reuse from absolute generation distance. Zero, constant,
+and scale-matched random Z should then complete the final-interface necessity audit.
+
+Do not yet run the remaining `p_direct` curve, horizons 128--512, depth and injection
+sweeps, layerwise persistence analysis, joint depth-by-time grid, gradient/adaptor
+diagnostic, validator comparison, or full multi-seed study. Those remain deliberately
+gated until a repaired interface restores correct-Z generation and localized swaps at
+the 31/61-token boundary. The current result is a mechanistic boundary finding, not a
+negative conclusion about all persistent goal-state mechanisms.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,
