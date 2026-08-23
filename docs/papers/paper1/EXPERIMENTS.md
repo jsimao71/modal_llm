@@ -60,6 +60,7 @@ modal-llm train-eval --config configs/paper1/horizon-32-direct.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-converged.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-direct-converged.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-prefix-6.yaml
+modal-llm train-eval --config configs/paper1/horizon-32-z-multivector-prefix-6.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -228,6 +229,12 @@ larger than additive Z's .086, but the small .007 quartile drift again occurs ne
 floor. Six addressable tokens projected from one Z therefore do not repair retrieval,
 despite using more active parameters. The next isolation should increase encoded-state
 structure rather than only expanding a single vector after encoding.
+
+The next control holds the six-token continuous-prefix interface fixed while changing
+the encoder from one pooled goal vector to six learned-query goal vectors. This tests
+encoded-state structure separately from prefix length. The learned vectors are not
+assumed to be facet-aligned; facet-specific claims require subsequent swaps and probes.
+All task, optimization, seed, and evaluation settings remain matched.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
