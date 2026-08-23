@@ -182,9 +182,9 @@ requests and requires one goal-conditioned answer token for every scheduled posi
 It uses all six facets and contains no target padding. The first point has five shuffled
 six-facet schedules (31 output tokens including the end marker), comparing canonical
 late-layer Z against a direct-only causal prompt. Evaluation reports satisfaction in
-four output quartiles, early-minus-late drift, and the same metrics under shuffled Z.
-Both conditions instantiate a 1,152-position model so later horizon points remain
-parameter-matched.
+four output quartiles and early-minus-late drift for both conditions; shuffled-Z
+counterparts are additionally reported only for the latent condition. Both conditions
+instantiate a 1,152-position model so later horizon points remain parameter-matched.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation

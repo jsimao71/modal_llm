@@ -441,37 +441,40 @@ def evaluate_horizon(
         after_base = model.compute_stats()
         base_calls += after_base["forward_calls"] - before_base["forward_calls"]
         base_positions += after_base["token_positions"] - before_base["token_positions"]
-        if goal is None:
-            raise RuntimeError("Horizon persistence evaluation requires a goal state")
-        shuffled_generated, _, _ = model.generate(
-            generation_prompt,
-            batch["target"].shape[1],
-            forced_goal=goal.roll(1, 0),
-        )
-        after_intervention = model.compute_stats()
-        intervention_calls += (
-            after_intervention["forward_calls"] - after_base["forward_calls"]
-        )
-        intervention_positions += (
-            after_intervention["token_positions"] - after_base["token_positions"]
-        )
+        shuffled_generated = None
+        if goal is not None:
+            shuffled_generated, _, _ = model.generate(
+                generation_prompt,
+                batch["target"].shape[1],
+                forced_goal=goal.roll(1, 0),
+            )
+            after_intervention = model.compute_stats()
+            intervention_calls += (
+                after_intervention["forward_calls"] - after_base["forward_calls"]
+            )
+            intervention_positions += (
+                after_intervention["token_positions"] - after_base["token_positions"]
+            )
 
         target_mask = batch["target_mask"]
         correct = generated.eq(batch["target"]) & target_mask
-        shuffled_correct = shuffled_generated.eq(batch["target"]) & target_mask
         denominator = target_mask.sum(1).clamp_min(1)
         batch_satisfaction = correct.sum(1).float() / denominator
-        batch_shuffled_satisfaction = shuffled_correct.sum(1).float() / denominator
         batch_exact = _sequence_exact(
             generated, batch["target"], target_mask, model.vocab.OUT_END
         )
-        batch_shuffled_exact = _sequence_exact(
-            shuffled_generated, batch["target"], target_mask, model.vocab.OUT_END
-        )
         exact.extend(batch_exact.float().cpu().tolist())
-        shuffled_exact.extend(batch_shuffled_exact.float().cpu().tolist())
         satisfaction.extend(batch_satisfaction.cpu().tolist())
-        shuffled_satisfaction.extend(batch_shuffled_satisfaction.cpu().tolist())
+        batch_shuffled_satisfaction = None
+        batch_shuffled_exact = None
+        if shuffled_generated is not None:
+            shuffled_correct = shuffled_generated.eq(batch["target"]) & target_mask
+            batch_shuffled_satisfaction = shuffled_correct.sum(1).float() / denominator
+            batch_shuffled_exact = _sequence_exact(
+                shuffled_generated, batch["target"], target_mask, model.vocab.OUT_END
+            )
+            shuffled_exact.extend(batch_shuffled_exact.float().cpu().tolist())
+            shuffled_satisfaction.extend(batch_shuffled_satisfaction.cpu().tolist())
 
         active_positions = target_mask[0].nonzero().flatten()
         for quartile, positions in enumerate(torch.tensor_split(active_positions, 4)):
@@ -483,42 +486,40 @@ def evaluate_horizon(
                 .cpu()
                 .tolist()
             )
-            shuffled_quartiles[quartile].extend(
-                shuffled_generated[:, positions]
-                .eq(batch["target"][:, positions])
-                .float()
-                .mean(1)
-                .cpu()
-                .tolist()
-            )
+            if shuffled_generated is not None:
+                shuffled_quartiles[quartile].extend(
+                    shuffled_generated[:, positions]
+                    .eq(batch["target"][:, positions])
+                    .float()
+                    .mean(1)
+                    .cpu()
+                    .tolist()
+                )
 
         for index, example_id in enumerate(raw["ids"]):
-            predictions.append(
-                {
-                    "id": example_id,
-                    "target": raw["target"][index].tolist(),
-                    "generated": generated[index].cpu().tolist(),
-                    "shuffled_generated": shuffled_generated[index].cpu().tolist(),
-                    "satisfaction": float(batch_satisfaction[index]),
-                    "shuffled_satisfaction": float(batch_shuffled_satisfaction[index]),
-                    "exact": bool(batch_exact[index]),
-                    "shuffled_exact": bool(batch_shuffled_exact[index]),
-                }
-            )
+            row = {
+                "id": example_id,
+                "target": raw["target"][index].tolist(),
+                "generated": generated[index].cpu().tolist(),
+                "satisfaction": float(batch_satisfaction[index]),
+                "exact": bool(batch_exact[index]),
+            }
+            if shuffled_generated is not None:
+                assert batch_shuffled_satisfaction is not None
+                assert batch_shuffled_exact is not None
+                row.update(
+                    shuffled_generated=shuffled_generated[index].cpu().tolist(),
+                    shuffled_satisfaction=float(batch_shuffled_satisfaction[index]),
+                    shuffled_exact=bool(batch_shuffled_exact[index]),
+                )
+            predictions.append(row)
 
     elapsed = time.perf_counter() - started
     compute = model.compute_stats()
     metrics = {
         "task_exact_match": mean(exact),
         "task_facet_satisfaction": mean(satisfaction),
-        "shuffled_goal_exact_match": mean(shuffled_exact),
-        "shuffled_goal_effect": mean(exact) - mean(shuffled_exact),
-        "shuffled_goal_facet_satisfaction": mean(shuffled_satisfaction),
-        "shuffled_goal_facet_effect": mean(satisfaction) - mean(shuffled_satisfaction),
         "goal_drift": mean(quartiles[0]) - mean(quartiles[3]),
-        "shuffled_goal_drift": mean(shuffled_quartiles[0]) - mean(
-            shuffled_quartiles[3]
-        ),
         "evaluation_examples": float(len(dataset)),
         "target_output_length": float(dataset.max_facets * dataset.target_repetitions + 1),
         "generated_tokens": float(
@@ -542,9 +543,21 @@ def evaluate_horizon(
     }
     for index in range(4):
         metrics[f"task_quartile_{index + 1}_satisfaction"] = mean(quartiles[index])
-        metrics[f"shuffled_goal_quartile_{index + 1}_satisfaction"] = mean(
-            shuffled_quartiles[index]
+    if shuffled_exact:
+        metrics.update(
+            shuffled_goal_exact_match=mean(shuffled_exact),
+            shuffled_goal_effect=mean(exact) - mean(shuffled_exact),
+            shuffled_goal_facet_satisfaction=mean(shuffled_satisfaction),
+            shuffled_goal_facet_effect=mean(satisfaction) - mean(
+                shuffled_satisfaction
+            ),
+            shuffled_goal_drift=mean(shuffled_quartiles[0])
+            - mean(shuffled_quartiles[3]),
         )
+        for index in range(4):
+            metrics[f"shuffled_goal_quartile_{index + 1}_satisfaction"] = mean(
+                shuffled_quartiles[index]
+            )
     return metrics, predictions
 
 

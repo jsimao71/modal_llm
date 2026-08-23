@@ -49,6 +49,22 @@ def test_horizon_evaluation_reports_quartiles_and_drift() -> None:
     assert "task_quartile_4_satisfaction" in metrics
     assert "shuffled_goal_drift" in metrics
 
+    direct = ModeTransformer(
+        dataset.vocab,
+        "B0",
+        d_model=16,
+        nhead=4,
+        layers=1,
+        dropout=0.0,
+        max_length=64,
+    )
+    direct_metrics, direct_predictions = experiment.evaluate_horizon(
+        direct, dataset, config, torch.device("cpu")
+    )
+    assert len(direct_predictions) == 4
+    assert "goal_drift" in direct_metrics
+    assert "shuffled_goal_drift" not in direct_metrics
+
 
 def test_suite_summary_omits_all_nonfinite_metrics(tmp_path: Path, monkeypatch) -> None:
     def fake_run(config, output_root, repository):
