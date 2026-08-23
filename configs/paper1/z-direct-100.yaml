@@ -1,0 +1,48 @@
+experiment: paper1-z-direct-100
+baseline: B5
+seed: 0
+device: auto
+model:
+  d_model: 64
+  nhead: 4
+  layers: 2
+  ff_mult: 4
+  dropout: 0.1
+  max_length: 128
+  generation_prompt_only: true
+  goal_vectors: 1
+  z_injection_schedule: late_layers
+data:
+  train_size: 2000
+  validation_size: 256
+  test_size: 512
+  min_facets: 2
+  max_facets: 6
+  max_distractors: 4
+  max_filler: 6
+  goal_prompt_style: canonical
+  direct_goal_exposure: 1.0
+  prompt_families: {train: standard, validation: reordered, test: interleaved}
+  corruption_families: {train: single_flip, validation: late_flip, test: mixed}
+training:
+  goal_warmup_epochs: 10
+  validation_every: 1
+  early_stopping_patience: 5
+  epochs: 40
+  batch_size: 128
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  grad_clip: 1.0
+  loss_weights:
+    lm: 1.0
+    goal: 1.0
+    goal_invariance: 0.0
+evaluation:
+  batch_size: 256
+  goal_probe:
+    enabled: true
+    epochs: 100
+    learning_rate: 0.01
+    weight_decay: 0.0001
+    mlp_hidden: 64
+    batch_size: 256

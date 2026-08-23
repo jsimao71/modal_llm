@@ -51,6 +51,10 @@ modal-llm train-eval --config configs/paper1/z-only-periodic.yaml
 modal-llm train-eval --config configs/paper1/z-only-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-late-layers-converged.yaml
 modal-llm train-eval --config configs/paper1/z-only-canonical-goal-converged.yaml
+modal-llm train-eval --config configs/paper1/z-direct-25.yaml
+modal-llm train-eval --config configs/paper1/z-direct-50.yaml
+modal-llm train-eval --config configs/paper1/z-direct-75.yaml
+modal-llm train-eval --config configs/paper1/z-direct-100.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -152,6 +156,13 @@ counterfactual control all reach 1.0, while shuffled Z reduces exact match by .9
 This passes Gates 1--3 at one-seed diagnostic scale and permits a canonical direct-goal
 exposure pilot. It does not establish a headline result or solve goal extraction from
 distractor-bearing rendered prompts.
+
+The direct-goal exposure curve keeps canonical late-layer Z active while inserting a
+deterministically sampled fraction of authoritative goal blocks into the generator's
+ordinary-token prefix. The completed canonical gate is the p=0 endpoint; four matched
+configs add p in {.25, .5, .75, 1}. Compare correct and shuffled Z within every
+condition to estimate whether the generator bypasses Z as a direct symbolic route is
+restored.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation

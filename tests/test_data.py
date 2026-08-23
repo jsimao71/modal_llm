@@ -87,3 +87,34 @@ def test_dataset_content_hash_covers_goal_prompt_style():
     )
 
     assert rendered.content_hash() != canonical.content_hash()
+
+
+def test_direct_goal_exposure_reveals_authoritative_requirements_deterministically():
+    hidden = ConstraintDataset(
+        4, seed=17, split="test", goal_prompt_style="canonical"
+    )
+    direct = ConstraintDataset(
+        4,
+        seed=17,
+        split="test",
+        goal_prompt_style="canonical",
+        direct_goal_exposure=1.0,
+    )
+    hidden_row = hidden[0]
+    direct_row = direct[0]
+    direct_tokens = direct_row["generation_prompt"].tolist()
+
+    assert hidden.vocab.GOAL_OPEN not in hidden_row["generation_prompt"].tolist()
+    assert direct_tokens.count(direct.vocab.GOAL_OPEN) == 1
+    assert direct_tokens.count(direct.vocab.REQ_OPEN) == direct_row["facet_count"]
+    assert torch.equal(direct_row["generation_prompt"], direct[0]["generation_prompt"])
+    assert hidden.content_hash() != direct.content_hash()
+
+
+def test_direct_goal_exposure_rejects_invalid_probability():
+    try:
+        ConstraintDataset(4, seed=17, split="train", direct_goal_exposure=1.1)
+    except ValueError as error:
+        assert "direct_goal_exposure" in str(error)
+    else:
+        raise AssertionError("invalid direct goal exposure should fail")

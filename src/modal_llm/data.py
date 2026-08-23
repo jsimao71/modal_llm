@@ -85,6 +85,7 @@ class ConstraintDataset(Dataset):
         prompt_family: str | None = None,
         corruption_family: str | None = None,
         goal_prompt_style: str = "rendered",
+        direct_goal_exposure: float = 0.0,
         namespace: str | None = None,
     ) -> None:
         if split not in self.DEFAULT_PROMPT_FAMILY:
@@ -102,12 +103,15 @@ class ConstraintDataset(Dataset):
         self.prompt_family = prompt_family or self.DEFAULT_PROMPT_FAMILY[split]
         self.corruption_family = corruption_family or self.DEFAULT_CORRUPTION_FAMILY[split]
         self.goal_prompt_style = goal_prompt_style
+        self.direct_goal_exposure = float(direct_goal_exposure)
         if self.prompt_family not in PROMPT_FAMILIES:
             raise ValueError(f"Unknown prompt family {self.prompt_family!r}")
         if self.corruption_family not in CORRUPTION_FAMILIES:
             raise ValueError(f"Unknown corruption family {self.corruption_family!r}")
         if self.goal_prompt_style not in GOAL_PROMPT_STYLES:
             raise ValueError(f"Unknown goal prompt style {self.goal_prompt_style!r}")
+        if not 0.0 <= self.direct_goal_exposure <= 1.0:
+            raise ValueError("direct_goal_exposure must be between 0 and 1")
         self.vocab = Vocabulary(max_facets)
 
     def __len__(self) -> int:
@@ -118,6 +122,12 @@ class ConstraintDataset(Dataset):
             self.namespace
         ]
         return random.Random(self.seed * 1_000_003 + split_offset + index)
+
+    def _direct_rng(self, index: int) -> random.Random:
+        split_offset = {"train": 0, "validation": 10_000_019, "test": 20_000_033}[
+            self.namespace
+        ]
+        return random.Random(self.seed * 1_000_003 + split_offset + index + 70_000_121)
 
     def _requirement_block(self, facet: int, value: int) -> list[int]:
         return [
@@ -203,6 +213,28 @@ class ConstraintDataset(Dataset):
         content.extend([self.vocab.CONTENT_CLOSE, self.vocab.TASK_END])
         return content
 
+    def _render_generation_prompt(
+        self,
+        content: list[int],
+        values: list[int],
+        index: int,
+    ) -> list[int]:
+        if self.direct_goal_exposure == 0.0:
+            return content
+        rng = self._direct_rng(index)
+        exposed = [
+            facet
+            for facet in range(len(values))
+            if self.direct_goal_exposure == 1.0 or rng.random() < self.direct_goal_exposure
+        ]
+        if not exposed:
+            return content
+        direct_goal = [self.vocab.GOAL_OPEN]
+        for facet in exposed:
+            direct_goal.extend(self._requirement_block(facet, values[facet]))
+        direct_goal.append(self.vocab.GOAL_CLOSE)
+        return content[:2] + direct_goal + content[2:]
+
     def _render_goal_only_prompt(
         self,
         rng: random.Random,
@@ -267,6 +299,7 @@ class ConstraintDataset(Dataset):
         family = prompt_family or self.prompt_family
         prompt = self._render_prompt(rng, values, order, family)
         content_prompt = self._render_content(order, family)
+        generation_prompt = self._render_generation_prompt(content_prompt, values, index)
         if self.goal_prompt_style == "canonical":
             canonical_order = list(range(k))
             goal_prompt = self._render_canonical_goal_prompt(values, canonical_order)
@@ -328,7 +361,7 @@ class ConstraintDataset(Dataset):
         return {
             "id": f"{self.split}-{index}",
             "prompt": torch.tensor(prompt, dtype=torch.long),
-            "generation_prompt": torch.tensor(content_prompt, dtype=torch.long),
+            "generation_prompt": torch.tensor(generation_prompt, dtype=torch.long),
             "goal_prompt": torch.tensor(goal_prompt, dtype=torch.long),
             "paraphrase_prompt": torch.tensor(paraphrase_prompt, dtype=torch.long),
             "paraphrase_goal_prompt": torch.tensor(paraphrase_goal_prompt, dtype=torch.long),
@@ -361,6 +394,7 @@ class ConstraintDataset(Dataset):
             "prompt_family": self.prompt_family,
             "corruption_family": self.corruption_family,
             "goal_prompt_style": self.goal_prompt_style,
+            "direct_goal_exposure": self.direct_goal_exposure,
             "max_facets": self.max_facets,
             "min_facets": self.min_facets,
             "max_distractors": self.max_distractors,

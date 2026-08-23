@@ -63,6 +63,7 @@ def _dataset(config: dict[str, Any], split: str, seed: int) -> ConstraintDataset
         prompt_family=prompt_families.get(split),
         corruption_family=corruption_families.get(split),
         goal_prompt_style=str(data.get("goal_prompt_style", "rendered")),
+        direct_goal_exposure=float(data.get("direct_goal_exposure", 0.0)),
         namespace=namespaces.get(split),
     )
 
