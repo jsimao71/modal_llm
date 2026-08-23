@@ -1,0 +1,43 @@
+{
+  "status": "one-seed Z-only convergence and causal-gate diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "condition": {
+    "config_reference": "configs/paper1/z-only-late-layers-converged.yaml",
+    "baseline": "B5",
+    "conditioning_mode": "additive",
+    "z_injection_schedule": "late_layers",
+    "goal_vectors": 1,
+    "goal_warmup_epochs": 10,
+    "completed_joint_epochs": 34,
+    "best_epoch": 29,
+    "optimizer_updates": 704,
+    "exact_match": 0.197265625,
+    "facet_satisfaction": 0.6420247444475535,
+    "shuffled_goal_exact_match": 0.095703125,
+    "shuffled_goal_effect": 0.1015625,
+    "zero_goal_exact_match": 0.080078125,
+    "zero_goal_effect": 0.1171875,
+    "random_goal_effect": 0.119140625,
+    "goal_probe_linear_test_facet_accuracy": 0.6609829488465396,
+    "goal_probe_linear_test_joint_exact_match": 0.19140625,
+    "goal_probe_linear_train_facet_accuracy": 0.9184006016545501,
+    "goal_probe_linear_validation_facet_accuracy": 0.8213925327951564,
+    "facet_goal_substitution_success": 0.935546875,
+    "facet_goal_substitution_isolated_success": 0.28515625,
+    "counterfactual_goal_exact_match": 0.28515625,
+    "paraphrase_goal_substitution_exact_match": 0.47265625,
+    "checkpoint_reload_verified": true
+  },
+  "gate_audit": {
+    "gate_1_goal_decodability": "fail: held-out facet accuracy .661 is below the approximate .90 target",
+    "gate_2_causal_identity": "improved but not passed: the one-seed correct-minus-shuffled effect is .102 and requires stronger representation plus replication",
+    "gate_3_counterfactual_control": "fail: target-facet change is .936 but isolated/full counterfactual success is only .285",
+    "decision": "do not restore direct goal access or run depth/time grids; repair the Z representation on a simpler canonical goal channel first"
+  },
+  "interpretation": [
+    "Longer joint training strengthens task performance and more than doubles the correct-versus-shuffled effect relative to the short late-layer pilot.",
+    "The train-to-test probe gap remains large, indicating that the encoder does not generalize goal extraction across held-out prompt topology.",
+    "A high target-facet substitution rate alone overstates causal control because most substituted generations fail to preserve all untouched facets.",
+    "The next experiment should isolate latent channel capacity and conditioning use with a canonical authoritative goal prompt before reintroducing distractors and topology shifts."
+  ]
+}

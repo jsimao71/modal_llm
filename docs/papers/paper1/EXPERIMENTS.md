@@ -49,6 +49,7 @@ modal-llm train-eval --config configs/paper1/z-only-multivector.yaml
 modal-llm train-eval --config configs/paper1/z-only-all-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-periodic.yaml
 modal-llm train-eval --config configs/paper1/z-only-late-layers.yaml
+modal-llm train-eval --config configs/paper1/z-only-late-layers-converged.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -129,6 +130,14 @@ still 1.271, and the 40-epoch follow-up in
 reaches .975 exact match and .995 facet satisfaction with validation LM loss .021.
 Accordingly, the short-run comparison measures optimization speed and must not be used
 to claim latent conditioning outperforms direct goal tokens.
+
+The corresponding converged late-layer Z run is stored in
+[`results/z_only_convergence_pilot_iteration1.json`](results/z_only_convergence_pilot_iteration1.json).
+It improves to .197 exact match with a .102 strict shuffled-goal effect, but held-out
+linear-probe facet accuracy remains .661 and isolated/full counterfactual success is
+only .285. Gates 1--3 therefore do not permit the direct-access, depth, or horizon
+sweeps yet; the next run must first isolate representation and channel capacity with a
+canonical authoritative goal prompt.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
