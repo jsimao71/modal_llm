@@ -43,6 +43,7 @@ hypotheses.
 
 ```powershell
 modal-llm train-eval --config configs/paper1/text-prefix.yaml
+modal-llm train-eval --config configs/paper1/text-prefix-converged.yaml
 modal-llm train-eval --config configs/paper1/z-only-gate.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector.yaml
 modal-llm train-eval --config configs/paper1/z-only-all-layers.yaml
@@ -121,6 +122,13 @@ At this one-seed pilot scale the direct causal text prefix reaches .102 exact ma
 continuous prefix. This remains an architecture diagnostic rather than a general claim:
 the text condition processes a longer distractor-bearing prompt, whereas the latent
 conditions separately encode the goal and generate from the content channel.
+
+The eight-epoch text control is not a converged baseline. Its validation LM loss is
+still 1.271, and the 40-epoch follow-up in
+[`results/text_prefix_convergence_pilot_iteration1.json`](results/text_prefix_convergence_pilot_iteration1.json)
+reaches .975 exact match and .995 facet satisfaction with validation LM loss .021.
+Accordingly, the short-run comparison measures optimization speed and must not be used
+to claim latent conditioning outperforms direct goal tokens.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation

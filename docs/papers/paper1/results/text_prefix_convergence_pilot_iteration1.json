@@ -1,0 +1,37 @@
+{
+  "status": "one-seed text-prefix convergence diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "comparison": [
+    {
+      "condition": "text_prefix_8_epochs",
+      "config_reference": "configs/paper1/text-prefix.yaml",
+      "baseline": "B0",
+      "joint_epochs": 8,
+      "optimizer_updates": 128,
+      "validation_lm": 1.2712206840515137,
+      "exact_match": 0.1015625,
+      "facet_satisfaction": 0.5184244848496746,
+      "checkpoint_reload_verified": true
+    },
+    {
+      "condition": "text_prefix_40_epochs",
+      "config_reference": "configs/paper1/text-prefix-converged.yaml",
+      "baseline": "B0",
+      "joint_epochs": 40,
+      "best_epoch": 40,
+      "optimizer_updates": 640,
+      "validation_lm": 0.021220725029706955,
+      "exact_match": 0.974609375,
+      "facet_satisfaction": 0.9945312499767169,
+      "checkpoint_reload_verified": true,
+      "parameter_count": 231373,
+      "active_parameter_count": 111168
+    }
+  ],
+  "interpretation": [
+    "The eight-epoch direct text-prefix control was severely under-optimized and cannot support a latent-over-text comparison.",
+    "With the same data and architecture trained for 40 joint epochs, the direct causal baseline nearly solves the held-out task.",
+    "The apparent advantage of the eight-epoch latent pilots over the eight-epoch text run is therefore an optimization-speed result, not evidence that latent conditioning is superior to direct symbolic access.",
+    "The strongest Z-only condition must receive a comparable convergence run before the causal gates are judged."
+  ]
+}
