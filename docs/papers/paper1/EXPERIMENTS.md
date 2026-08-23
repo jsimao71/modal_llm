@@ -47,6 +47,7 @@ modal-llm train-eval --config configs/paper1/z-only-multivector.yaml
 modal-llm train-eval --config configs/paper1/z-only-all-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-periodic.yaml
 modal-llm train-eval --config configs/paper1/z-only-late-layers.yaml
+modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 ```
 
 This configuration removes token-level goal access from the generator by using the
@@ -77,6 +78,12 @@ The late-layer variant is the follow-up top-down-control diagnostic. It re-injec
 same latent only in the final quarter of generation layers, asking whether a late
 goal reminder is more useful than early or repeated additive conditioning in this small
 shared-weight setting.
+
+The multivector-plus-late-layer variant combines the two strongest signals observed so
+far: a richer latent bank of goal vectors and late-layer goal availability. Use it to
+test whether the late top-down-control benefit compounds with increased latent capacity,
+or whether the two mechanisms mainly substitute for one another in this small pilot
+regime.
 
 ## Main model and five-seed baseline suite
 
