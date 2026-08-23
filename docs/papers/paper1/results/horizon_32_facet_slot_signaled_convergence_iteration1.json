@@ -1,0 +1,55 @@
+{
+  "status": "one-seed 31-output-token signaled facet-slot convergence and causal-gate diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "condition": {
+    "config_reference": "configs/paper1/horizon-32-z-facet-slot-signaled-converged.yaml",
+    "baseline": "B5",
+    "run_reference": "results/paper1-horizon-32-z-facet-slot-signaled-converged/B5/20260823T164355461192Z-seed0",
+    "source_commit": "3ba103c",
+    "goal_pooling": "facet_tokens",
+    "conditioning_mode": "slot_prefix",
+    "slot_prefix_signals": true,
+    "goal_vectors": 6,
+    "prefix_tokens": 6,
+    "best_epoch": 120,
+    "completed_joint_epochs": 120,
+    "goal_warmup_epochs": 10,
+    "parameter_count": 1552398,
+    "active_parameter_count": 181313,
+    "validation_goal": 0.002080922116874717,
+    "validation_lm": 0.006778152659535408,
+    "task_exact_match": 1.0,
+    "task_facet_satisfaction": 1.0,
+    "quartile_satisfaction": [1.0, 1.0, 1.0, 1.0],
+    "early_minus_late_drift": 0.0,
+    "shuffled_goal_exact_match": 0.015625,
+    "correct_minus_shuffled_exact_effect": 0.984375,
+    "shuffled_goal_facet_satisfaction": 0.5026041723322123,
+    "correct_minus_shuffled_facet_effect": 0.49739582766778767,
+    "facet_slot_swap_exact_match": 0.671875,
+    "facet_slot_swap_selected_satisfaction": 0.7031250004656613,
+    "facet_slot_swap_untouched_satisfaction": 0.9984374991618097,
+    "checkpoint_reload_verified": true
+  },
+  "matched_references": {
+    "signaled_80_epoch_facet_satisfaction": 0.7429687520489097,
+    "signaled_80_epoch_exact_match": 0.0,
+    "signaled_80_epoch_shuffled_facet_effect": 0.3687499950756319,
+    "direct_text_facet_satisfaction": 1.0,
+    "direct_text_exact_match": 1.0
+  },
+  "gate_audit": {
+    "task_learnability": "pass: correct Z reaches 1.0 exact match and satisfaction in every quartile",
+    "causal_z_use": "pass at one seed: shuffling reduces exact match by .984 and facet satisfaction by .497",
+    "localized_counterfactual_control": "strong but incomplete: full slot-swap exact match is .672 with .998 untouched-position satisfaction",
+    "persistence_at_31_tokens": "pass operationally: satisfaction is 1.0 in all quartiles with zero drift",
+    "optimization": "behaviorally saturated, although epoch 120 remains selected and validation LM continues to improve",
+    "decision": "advance to the next approximately 64-token horizon point with matched direct and shuffled-Z controls; retain one-seed diagnostic status"
+  },
+  "interpretation": [
+    "Explicit slot identity and position signals plus sufficient optimization transform the same compact goal channel from near-floor failure to perfect scheduled generation.",
+    "The chance-level shuffled-Z satisfaction and .984 exact effect establish example-specific causal dependence rather than schedule-prior learning.",
+    "Strong untouched-position preservation under one-slot replacement supports localized facet control, although selected-facet and full counterfactual success are not yet perfect.",
+    "This result justifies one longer-horizon diagnostic point, not the full horizon grid or a multi-seed headline claim."
+  ]
+}

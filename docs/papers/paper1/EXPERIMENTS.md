@@ -297,6 +297,17 @@ The convergence extension changes only the joint ceiling from 80 to 120 epochs a
 patience from 8 to 10 validations. It preserves the seed, initialization trajectory,
 data, model, optimizer, slot interface, and causal evaluator.
 
+The convergence result is stored in
+[`results/horizon_32_facet_slot_signaled_convergence_iteration1.json`](results/horizon_32_facet_slot_signaled_convergence_iteration1.json).
+Correct Z reaches 1.0 exact match and satisfaction in every quartile. Shuffled Z falls
+to .0156 exact match and .503 satisfaction, yielding causal effects of .984 and .497.
+Replacing one facet slot produces the complete counterfactual sequence in .672 of
+examples while preserving untouched positions at .998 satisfaction. The aligned,
+signaled interface therefore passes the one-seed 31-token task and causal gates after
+sufficient optimization. Localized control remains incomplete and epoch 120 is still
+selected, so advance only to the next approximately 64-token diagnostic point rather
+than the full grid or headline replication.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,
