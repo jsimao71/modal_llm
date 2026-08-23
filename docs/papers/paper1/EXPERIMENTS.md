@@ -65,6 +65,7 @@ modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-prefix.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-signaled.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-signaled-converged.yaml
 modal-llm train-eval --config configs/paper1/horizon-64-direct.yaml
+modal-llm train-eval --config configs/paper1/horizon-64-direct-converged.yaml
 modal-llm train-eval --config configs/paper1/horizon-64-z-facet-slot-signaled.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
@@ -324,6 +325,11 @@ rapidly (1.100 at epoch 100 to .473 at epoch 120). Consequently, do not run or
 interpret the matched Z condition yet. Extend only the direct-text optimization ceiling
 with seed, data, architecture, optimizer, and evaluator fixed. Exact values and the gate
 decision are in `results/horizon_64_direct_iteration1.json`.
+
+The direct convergence extension changes only the joint-training ceiling from 120 to
+160 epochs and keeps patience at ten validations. It starts from the same deterministic
+seed rather than reloading the epoch-120 checkpoint because checkpoints do not preserve
+AdamW optimizer state; resetting optimizer moments would introduce an unplanned change.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
