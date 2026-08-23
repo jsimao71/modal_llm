@@ -57,6 +57,8 @@ modal-llm train-eval --config configs/paper1/z-direct-75.yaml
 modal-llm train-eval --config configs/paper1/z-direct-100.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-direct.yaml
+modal-llm train-eval --config configs/paper1/horizon-32-z-converged.yaml
+modal-llm train-eval --config configs/paper1/horizon-32-direct-converged.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -196,6 +198,9 @@ the fourth, whereas the small .019 Z drift is not evidence of persistence becaus
 is near floor throughout. Exact match is zero for both conditions, and both select the
 last or penultimate epoch while validation loss is still improving. The optimization
 gate therefore fails: converge this matched point before launching longer horizons.
+The convergence follow-up changes only the maximum joint budget from 40 to 80 epochs
+and early-stopping patience from 5 to 8 validations. Data, initialization seed,
+architecture, optimizer, and evaluator remain fixed.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
