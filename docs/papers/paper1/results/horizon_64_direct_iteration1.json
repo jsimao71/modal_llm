@@ -1,0 +1,39 @@
+{
+  "status": "one-seed 61-output-token direct-text learnability gate; under-optimized and not a headline result",
+  "date": "2026-08-23",
+  "condition": {
+    "config_reference": "configs/paper1/horizon-64-direct.yaml",
+    "baseline": "B0",
+    "run_reference": "results/paper1-horizon-64-direct/B0/20260823T171709919975Z-seed0",
+    "source_commit": "95df955",
+    "target_output_length": 61,
+    "target_repetitions": 10,
+    "best_epoch": 120,
+    "completed_joint_epochs": 120,
+    "parameter_count": 297038,
+    "active_parameter_count": 176704,
+    "validation_lm": 0.47341344598680735,
+    "task_exact_match": 0.0,
+    "task_facet_satisfaction": 0.677604163531214,
+    "quartile_satisfaction": [
+      0.8093750113621354,
+      0.48958334792405367,
+      0.6729166856966913,
+      0.7385416820179671
+    ],
+    "early_minus_late_drift": 0.0708333293441683,
+    "checkpoint_reload_verified": true,
+    "training_wall_seconds": 1700.7972394999815
+  },
+  "gate_audit": {
+    "task_learnability": "unresolved: exact match is zero and facet satisfaction is .678 at the 120-epoch ceiling",
+    "optimization": "fail: epoch 120 is selected and validation LM is still falling rapidly, from 1.100 at epoch 100 to .473 at epoch 120",
+    "causal_z_use": "not tested at this horizon because the matched direct-text learnability gate did not pass",
+    "decision": "extend the direct-text optimization ceiling without changing data, seed, model, or evaluator; run signaled facet-slot Z only after direct learnability passes"
+  },
+  "interpretation": [
+    "The 120-epoch result cannot identify a latent-conditioning horizon effect because the direct-text control is itself under-optimized.",
+    "High early-quartile satisfaction does not rescue the gate: sequence exact match is zero and satisfaction is non-monotonic across quartiles.",
+    "The steep terminal validation improvement motivates an optimization extension rather than a Z comparison or a larger horizon sweep."
+  ]
+}

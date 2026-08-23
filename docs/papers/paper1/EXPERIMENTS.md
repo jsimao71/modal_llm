@@ -317,6 +317,14 @@ and causal evaluator used at the converged 31-token point. Evaluation batch size
 from 16 to 8 only for memory safety. Run direct text first as the task-learnability
 gate, then correct/shuffled/counterfactual Z.
 
+The 120-epoch direct-text gate is under-optimized rather than passed. It obtains zero
+exact match and .678 facet satisfaction, with quartile satisfaction
+(.809, .490, .673, .739). Epoch 120 is selected and validation LM is still falling
+rapidly (1.100 at epoch 100 to .473 at epoch 120). Consequently, do not run or
+interpret the matched Z condition yet. Extend only the direct-text optimization ceiling
+with seed, data, architecture, optimizer, and evaluator fixed. Exact values and the gate
+decision are in `results/horizon_64_direct_iteration1.json`.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,
