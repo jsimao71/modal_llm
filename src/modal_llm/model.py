@@ -36,6 +36,8 @@ class GenerationContext:
     prefix_length: int
     goal: torch.Tensor | None
     conditioning: torch.Tensor | None
+    prefix_keys: torch.Tensor | None
+    prefix_values: torch.Tensor | None
 
 
 BASELINES = {
@@ -102,6 +104,9 @@ class ModeTransformer(nn.Module):
         self.review_queries = nn.Parameter(torch.randn(goal_vectors, d_model) * 0.02)
         self.goal_condition = nn.Linear(self.latent_width, d_model, bias=False)
         self.goal_prefix = nn.Linear(self.latent_width, prefix_tokens * d_model, bias=False)
+        prefix_kv_width = layers * prefix_tokens * d_model
+        self.goal_prefix_keys = nn.Linear(self.latent_width, prefix_kv_width, bias=False)
+        self.goal_prefix_values = nn.Linear(self.latent_width, prefix_kv_width, bias=False)
         self.match_control = nn.Sequential(
             nn.Linear(d_model, d_model), nn.GELU(), nn.Linear(d_model, d_model)
         )
@@ -152,7 +157,16 @@ class ModeTransformer(nn.Module):
         if self.spec.matched_mlp:
             modules.append(self.match_control)
         if self.spec.use_goal:
-            modules.extend([self.goal_head, self.goal_condition, self.goal_prefix, self.facet_head])
+            modules.extend(
+                [
+                    self.goal_head,
+                    self.goal_condition,
+                    self.goal_prefix,
+                    self.goal_prefix_keys,
+                    self.goal_prefix_values,
+                    self.facet_head,
+                ]
+            )
         if self.spec.review is not None:
             modules.append(self.review_head)
         if self.spec.validator is not None:
@@ -198,9 +212,14 @@ class ModeTransformer(nn.Module):
         *,
         causal: bool,
         conditioning: torch.Tensor | None = None,
+        prefix_keys: torch.Tensor | None = None,
+        prefix_values: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        if (prefix_keys is None) != (prefix_values is None):
+            raise ValueError("prefix_keys and prefix_values must be provided together")
         self._forward_calls += 1
-        self._token_positions += int((~padding).sum())
+        prefix_positions = 0 if prefix_keys is None else prefix_keys.shape[0] * prefix_keys.shape[2]
+        self._token_positions += int((~padding).sum()) + prefix_positions
         length = embeddings.shape[1]
         mask = None
         if causal:
@@ -212,13 +231,82 @@ class ModeTransformer(nn.Module):
         for index, layer in enumerate(self.layers):
             if index in injected_layers:
                 hidden = hidden + conditioning
-            hidden = layer(
-                hidden,
-                src_mask=mask,
-                src_key_padding_mask=padding,
-                is_causal=causal,
-            )
+            if prefix_keys is None:
+                hidden = layer(
+                    hidden,
+                    src_mask=mask,
+                    src_key_padding_mask=padding,
+                    is_causal=causal,
+                )
+            else:
+                hidden = self._run_layer_with_prefix_kv(
+                    layer,
+                    hidden,
+                    padding,
+                    prefix_keys[:, index],
+                    prefix_values[:, index],
+                    causal=causal,
+                )
         return self.final_norm(hidden)
+
+    @staticmethod
+    def _run_layer_with_prefix_kv(
+        layer: nn.TransformerEncoderLayer,
+        hidden: torch.Tensor,
+        padding: torch.Tensor,
+        prefix_keys: torch.Tensor,
+        prefix_values: torch.Tensor,
+        *,
+        causal: bool,
+    ) -> torch.Tensor:
+        """Run one pre-norm block with goal memory available only as attention K/V."""
+
+        normalized = layer.norm1(hidden)
+        keys = torch.cat([prefix_keys, normalized], dim=1)
+        values = torch.cat([prefix_values, normalized], dim=1)
+        prefix_padding = torch.zeros(
+            (padding.shape[0], prefix_keys.shape[1]),
+            dtype=torch.bool,
+            device=padding.device,
+        )
+        key_padding = torch.cat([prefix_padding, padding], dim=1)
+        attention_mask = None
+        if causal:
+            token_mask = torch.triu(
+                torch.ones(
+                    hidden.shape[1],
+                    hidden.shape[1],
+                    dtype=torch.bool,
+                    device=hidden.device,
+                ),
+                diagonal=1,
+            )
+            attention_mask = torch.cat(
+                [
+                    torch.zeros(
+                        hidden.shape[1],
+                        prefix_keys.shape[1],
+                        dtype=torch.bool,
+                        device=hidden.device,
+                    ),
+                    token_mask,
+                ],
+                dim=1,
+            )
+        attention = layer.self_attn(
+            normalized,
+            keys,
+            values,
+            attn_mask=attention_mask,
+            key_padding_mask=key_padding,
+            need_weights=False,
+        )[0]
+        hidden = hidden + layer.dropout1(attention)
+        normalized = layer.norm2(hidden)
+        feed_forward = layer.linear2(
+            layer.dropout(layer.activation(layer.linear1(normalized)))
+        )
+        return hidden + layer.dropout2(feed_forward)
 
     @staticmethod
     def _mean(hidden: torch.Tensor, padding: torch.Tensor) -> torch.Tensor:
@@ -311,6 +399,8 @@ class ModeTransformer(nn.Module):
             prefix_padding = prompt_padding
         effective_goal = forced_goal if forced_goal is not None else goal
         conditioning = None
+        prefix_keys = None
+        prefix_values = None
         if self.spec.use_goal and effective_goal is not None:
             flattened = self._flatten_state(effective_goal)
             if self.conditioning_mode == "additive":
@@ -337,9 +427,26 @@ class ModeTransformer(nn.Module):
                     ],
                     dim=1,
                 )
+            elif self.conditioning_mode == "prefix_kv":
+                shape = (
+                    prompt.shape[0],
+                    len(self.layers),
+                    self.prefix_tokens,
+                    self.d_model,
+                )
+                prefix_keys = self.goal_prefix_keys(flattened).reshape(shape)
+                prefix_values = self.goal_prefix_values(flattened).reshape(shape)
             else:
                 raise ValueError(f"Unknown conditioning_mode {self.conditioning_mode!r}")
-        return GenerationContext(prefix, prefix_padding, prefix.shape[1], goal, conditioning)
+        return GenerationContext(
+            prefix,
+            prefix_padding,
+            prefix.shape[1],
+            goal,
+            conditioning,
+            prefix_keys,
+            prefix_values,
+        )
 
     def generation_forward(
         self,
@@ -364,7 +471,14 @@ class ModeTransformer(nn.Module):
             suffix = suffix + context.conditioning
         embeddings = torch.cat([context.prefix, suffix], dim=1)
         padding = torch.cat([context.prompt_padding, decoder_input.eq(self.vocab.PAD)], dim=1)
-        hidden = self._run(embeddings, padding, causal=True, conditioning=context.conditioning)
+        hidden = self._run(
+            embeddings,
+            padding,
+            causal=True,
+            conditioning=context.conditioning,
+            prefix_keys=context.prefix_keys,
+            prefix_values=context.prefix_values,
+        )
         generated_hidden = hidden[:, context.prefix_length :, :]
         return self.lm_head(generated_hidden), context.goal, generated_hidden
 

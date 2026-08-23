@@ -245,6 +245,76 @@ def test_prefix_conditioning_adds_latent_tokens_without_reencoding():
     assert calls == 4
 
 
+def test_prefix_kv_conditioning_adds_per_layer_memory_without_query_tokens():
+    dataset, batch = _batch()
+    model = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=2,
+        dropout=0.0,
+        generation_prompt_only=True,
+        conditioning_mode="prefix_kv",
+        prefix_tokens=3,
+    ).eval()
+    context = model.prepare_generation(
+        batch["generation_prompt"], goal_prompt=batch["goal_prompt"]
+    )
+
+    assert context.conditioning is None
+    assert context.prefix_length == batch["generation_prompt"].shape[1]
+    assert context.prefix_keys is not None
+    assert context.prefix_values is not None
+    assert context.prefix_keys.shape == (2, 2, 3, 16)
+    assert context.prefix_values.shape == (2, 2, 3, 16)
+    generated, goal, calls = model.generate(
+        batch["generation_prompt"],
+        max_tokens=3,
+        goal_prompt=batch["goal_prompt"],
+    )
+    assert generated.shape == (2, 3)
+    assert goal is not None
+    assert calls == 4
+
+
+def test_prefix_kv_causal_attention_cannot_read_future_tokens():
+    dataset, batch = _batch()
+    model = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=2,
+        dropout=0.0,
+        generation_prompt_only=True,
+        conditioning_mode="prefix_kv",
+        prefix_tokens=2,
+    ).eval()
+    context = model.prepare_generation(
+        batch["generation_prompt"][:1], goal_prompt=batch["goal_prompt"][:1]
+    )
+    ids = batch["generation_prompt"][:1].clone()
+    alternative = ids.clone()
+    nonpad = alternative[0].ne(dataset.vocab.PAD).nonzero().flatten()
+    alternative[0, nonpad[-2]] = dataset.vocab.FILLER
+    hidden_a = model._run(
+        model._embeddings(ids, "generate"),
+        ids.eq(dataset.vocab.PAD),
+        causal=True,
+        prefix_keys=context.prefix_keys,
+        prefix_values=context.prefix_values,
+    )
+    hidden_b = model._run(
+        model._embeddings(alternative, "generate"),
+        alternative.eq(dataset.vocab.PAD),
+        causal=True,
+        prefix_keys=context.prefix_keys,
+        prefix_values=context.prefix_values,
+    )
+    assert torch.allclose(hidden_a[:, 0], hidden_b[:, 0], atol=1e-6)
+
+
 def test_seeded_initialization_and_optimizer_step_are_deterministic():
     dataset, batch = _batch()
 

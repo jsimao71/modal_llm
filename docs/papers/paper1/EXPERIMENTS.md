@@ -52,6 +52,7 @@ modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-8.yaml
+modal-llm train-eval --config configs/paper1/z-only-prefix-kv.yaml
 ```
 
 The text-prefix configuration is the matched direct-channel control: its causal
@@ -102,6 +103,11 @@ The first follow-up after the base prefix pilot is a small prefix-token sweep. C
 2, 4, and 8 latent prefix tokens under the same held-out Z-only strong-goal setting to
 determine whether the competitive prefix result is robust or narrowly tuned to one
 prefix length.
+
+The prefix-KV condition keeps two goal-derived key/value memories available at every
+self-attention layer. Unlike the continuous-prefix condition, these memories are never
+queries and never occupy residual-stream output positions. A causal-mask regression
+test verifies that adding this memory path does not expose future generator tokens.
 
 The checked-in source for the matched direct-text comparison is
 [`results/z_only_context_controls_pilot_iteration1.json`](results/z_only_context_controls_pilot_iteration1.json).
