@@ -62,6 +62,7 @@ modal-llm train-eval --config configs/paper1/horizon-32-direct-converged.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-prefix-6.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-multivector-prefix-6.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-prefix.yaml
+modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-signaled.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -274,6 +275,13 @@ slot extraction, slot-level value supervision, and direct slot presentation ther
 do not establish localized behavioral control. Longer horizons and facet-swap claims
 remain gated. Next diagnose latent-prefix token signaling or encode--generate gradient
 compatibility rather than adding capacity.
+
+The next interface control preserves the aligned slots and direct slot prefix but adds
+two signals carried by ordinary generation tokens: a learned facet-slot identity and
+the slot's generation-prefix position embedding. The failed unsignaled condition
+remains selectable and reproducible. A gain would localize the deficit to latent-token
+signaling; another failure would strengthen the case for an optimization-compatibility
+diagnostic.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation

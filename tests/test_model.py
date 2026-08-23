@@ -190,6 +190,34 @@ def test_facet_token_slots_are_aligned_and_exposed_directly_as_prefix() -> None:
     assert torch.allclose(context.prefix[:, -4:], goal + mode)
     assert torch.isfinite(model.goal_objective(batch)["total"])
 
+    signaled = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=1,
+        dropout=0.0,
+        generation_prompt_only=True,
+        goal_vectors=4,
+        goal_pooling="facet_tokens",
+        conditioning_mode="slot_prefix",
+        prefix_tokens=4,
+        slot_prefix_signals=True,
+    ).eval()
+    _, signaled_goal = signaled.encode(batch["goal_prompt"])
+    signaled_context = signaled.prepare_generation(
+        batch["generation_prompt"], goal_prompt=batch["goal_prompt"]
+    )
+    slot_indices = torch.arange(4)
+    positions = torch.arange(batch["generation_prompt"].shape[1], signaled_context.prefix_length)
+    expected = (
+        signaled_goal
+        + signaled.mode_embedding.weight[1][None, None, :]
+        + signaled.goal_slot_identity(slot_indices)[None, :, :]
+        + signaled.position_embedding(positions)[None, :, :]
+    )
+    assert torch.allclose(signaled_context.prefix[:, -4:], expected)
+
 
 def test_facet_token_slots_require_one_vector_per_facet() -> None:
     dataset, _ = _batch()

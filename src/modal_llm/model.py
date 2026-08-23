@@ -76,6 +76,7 @@ class ModeTransformer(nn.Module):
         z_injection_period: int = 2,
         conditioning_mode: str = "additive",
         prefix_tokens: int = 4,
+        slot_prefix_signals: bool = False,
     ) -> None:
         super().__init__()
         if baseline not in BASELINES:
@@ -91,6 +92,7 @@ class ModeTransformer(nn.Module):
         self.z_injection_period = z_injection_period
         self.conditioning_mode = conditioning_mode
         self.prefix_tokens = prefix_tokens
+        self.slot_prefix_signals = slot_prefix_signals
         if goal_pooling not in {"learned_queries", "facet_tokens"}:
             raise ValueError(f"Unknown goal_pooling {goal_pooling!r}")
         if goal_pooling == "facet_tokens" and goal_vectors != vocab.max_facets:
@@ -122,6 +124,7 @@ class ModeTransformer(nn.Module):
         self.lm_head.weight = self.token_embedding.weight
         self.facet_head = nn.Linear(self.latent_width, vocab.max_facets)
         self.goal_slot_facet_head = nn.Linear(d_model, 1)
+        self.goal_slot_identity = nn.Embedding(goal_vectors, d_model)
         validator_width = self.latent_width * 4
         self.validator_body = nn.Sequential(
             nn.Linear(validator_width, self.latent_width),
@@ -176,6 +179,8 @@ class ModeTransformer(nn.Module):
                 modules.extend([self.goal_prefix_keys, self.goal_prefix_values])
             elif self.conditioning_mode != "slot_prefix":
                 raise ValueError(f"Unknown conditioning_mode {self.conditioning_mode!r}")
+            if self.conditioning_mode == "slot_prefix" and self.slot_prefix_signals:
+                modules.append(self.goal_slot_identity)
             if self.goal_pooling == "facet_tokens":
                 modules.append(self.goal_slot_facet_head)
             else:
@@ -478,6 +483,18 @@ class ModeTransformer(nn.Module):
                     effective_goal
                     + self.mode_embedding.weight[MODES["generate"]][None, None, :]
                 )
+                if self.slot_prefix_signals:
+                    slot_indices = torch.arange(self.prefix_tokens, device=prompt.device)
+                    generation_positions = torch.arange(
+                        prompt.shape[1],
+                        prompt.shape[1] + self.prefix_tokens,
+                        device=prompt.device,
+                    )
+                    latent_prefix = (
+                        latent_prefix
+                        + self.goal_slot_identity(slot_indices)[None, :, :]
+                        + self.position_embedding(generation_positions)[None, :, :]
+                    )
                 prefix = torch.cat([prefix, latent_prefix], dim=1)
                 prefix_padding = torch.cat(
                     [

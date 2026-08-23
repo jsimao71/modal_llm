@@ -94,6 +94,7 @@ def _model(config: dict[str, Any], dataset: ConstraintDataset) -> ModeTransforme
         z_injection_period=int(values.get("z_injection_period", 2)),
         conditioning_mode=str(values.get("conditioning_mode", "additive")),
         prefix_tokens=int(values.get("prefix_tokens", 4)),
+        slot_prefix_signals=bool(values.get("slot_prefix_signals", False)),
     )
 
 
