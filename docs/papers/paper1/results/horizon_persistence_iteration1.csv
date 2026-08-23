@@ -1,0 +1,11 @@
+horizon_tokens,condition,satisfaction
+31,Direct text,1.0
+31,Correct Z,1.0
+31,Shuffled Z,0.5026041723322123
+31,Slot swap selected,0.7031250004656613
+31,Slot swap untouched,0.9984374991618097
+61,Direct text,1.0
+61,Correct Z,0.16015625395812094
+61,Shuffled Z,0.07890625244181138
+61,Slot swap selected,0.16250000393483788
+61,Slot swap untouched,0.16390624939231202

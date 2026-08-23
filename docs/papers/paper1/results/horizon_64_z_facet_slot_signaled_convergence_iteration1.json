@@ -1,0 +1,66 @@
+{
+  "status": "one-seed 61-output-token signaled facet-slot Z convergence and causal diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "condition": {
+    "config_reference": "configs/paper1/horizon-64-z-facet-slot-signaled-converged.yaml",
+    "baseline": "B5",
+    "run_reference": "results/paper1-horizon-64-z-facet-slot-signaled-converged/B5/20260823T182918261740Z-seed0",
+    "source_commit": "53b2c2f",
+    "goal_pooling": "facet_tokens",
+    "conditioning_mode": "slot_prefix",
+    "slot_prefix_signals": true,
+    "goal_vectors": 6,
+    "prefix_tokens": 6,
+    "target_output_length": 61,
+    "target_repetitions": 10,
+    "best_epoch": 151,
+    "completed_joint_epochs": 160,
+    "goal_warmup_epochs": 10,
+    "parameter_count": 1552398,
+    "active_parameter_count": 181313,
+    "validation_goal": 0.0019359561629244126,
+    "validation_lm": 1.1205520406365395,
+    "task_exact_match": 0.0,
+    "task_facet_satisfaction": 0.16015625395812094,
+    "quartile_satisfaction": [
+      0.16666667239042,
+      0.15729167230892926,
+      0.15625000617001206,
+      0.16041667282115668
+    ],
+    "early_minus_late_drift": 0.006249999569263309,
+    "shuffled_goal_exact_match": 0.0,
+    "correct_minus_shuffled_exact_effect": 0.0,
+    "shuffled_goal_facet_satisfaction": 0.07890625244181138,
+    "correct_minus_shuffled_facet_effect": 0.08125000151630957,
+    "facet_slot_swap_exact_match": 0.0,
+    "facet_slot_swap_selected_satisfaction": 0.16250000393483788,
+    "facet_slot_swap_untouched_satisfaction": 0.16390624939231202,
+    "checkpoint_reload_verified": true,
+    "training_wall_seconds": 2215.1584805000457
+  },
+  "matched_references": {
+    "direct_61_token_exact_match": 1.0,
+    "direct_61_token_facet_satisfaction": 1.0,
+    "signaled_z_31_token_exact_match": 1.0,
+    "signaled_z_31_token_facet_satisfaction": 1.0,
+    "signaled_z_31_token_shuffled_facet_satisfaction": 0.5026041723322123,
+    "signaled_z_31_token_slot_swap_selected_satisfaction": 0.7031250004656613,
+    "signaled_z_31_token_slot_swap_untouched_satisfaction": 0.9984374991618097
+  },
+  "gate_audit": {
+    "task_learnability": "fail for Z: matched direct text is perfect, but correct-Z exact match is zero and satisfaction is .160",
+    "causal_z_use": "weak graded pass only: correct Z exceeds shuffled Z by .081 satisfaction, but both exact-match rates are zero",
+    "persistence_at_61_tokens": "fail operationally: correct-Z satisfaction is near floor in every quartile, despite little additional early-to-late drift",
+    "localized_counterfactual_control": "fail: selected and untouched slot-swap satisfaction are both approximately .163",
+    "optimization": "plateaued: best epoch is 151; validation LM changes only from 1.158 at epoch 80 to 1.121 at epoch 151 and worsens slightly by epoch 160",
+    "decodability_use_gap": "present: validation goal loss is .00194 while validation LM remains 1.121",
+    "decision": "do not advance the horizon grid; next isolate repeated-use and generation-time injection before increasing length or launching multiple seeds"
+  },
+  "interpretation": [
+    "The signaled six-slot interface that succeeds at 31 tokens does not scale to ten repeated facet uses at 61 tokens under matched optimization.",
+    "The small correct-minus-shuffled satisfaction effect shows residual example-specific Z use, but it is insufficient for task completion or localized interventions.",
+    "Near-uniform low quartiles indicate failure from the beginning rather than progressive forgetting alone.",
+    "Low goal loss with high LM loss localizes the failure between facet decodability and repeated generative use."
+  ]
+}

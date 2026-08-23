@@ -345,6 +345,18 @@ to the staged 120-epoch Z configuration, only that ceiling changes. Correct-Z ta
 behavior remains the first gate; shuffled-Z necessity and one-slot counterfactual
 locality are interpreted only if correct Z learns the 61-token schedule.
 
+The 61-token Z condition fails the task and locality gates despite the matched direct
+pass. Correct-Z exact match is zero and satisfaction is .160 in nearly flat quartiles
+(.167, .157, .156, .160), versus shuffled-Z satisfaction .079. The .081 graded effect
+shows residual example-specific use, but selected and untouched slot-swap satisfaction
+are both approximately .163, so control is not localized. This is not the direct run's
+under-optimization pattern: the selected epoch is 151 of 160 and validation LM has
+plateaued near 1.12, while validation goal loss reaches .00194. The resulting
+decodability--use gap blocks the remaining horizon grid. Next isolate repeated slot use
+and generation-time injection at the learned 31/61-token boundary. Exact values are in
+`results/horizon_64_z_facet_slot_signaled_convergence_iteration1.json`; the compact
+comparison is in `results/horizon_persistence_iteration1.csv`.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,
