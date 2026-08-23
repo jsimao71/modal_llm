@@ -55,6 +55,8 @@ modal-llm train-eval --config configs/paper1/z-direct-25.yaml
 modal-llm train-eval --config configs/paper1/z-direct-50.yaml
 modal-llm train-eval --config configs/paper1/z-direct-75.yaml
 modal-llm train-eval --config configs/paper1/z-direct-100.yaml
+modal-llm train-eval --config configs/paper1/horizon-32-z.yaml
+modal-llm train-eval --config configs/paper1/horizon-32-direct.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -172,6 +174,17 @@ smoothly. At p=1, zero-Z facet satisfaction rises to .738, showing that direct t
 are usable, but counterfactual Z still overrides conflicting direct requirements in
 .926 of complete outputs. The current late-layer additive architecture therefore
 prefers Z rather than bypassing it.
+
+## Generation-horizon persistence
+
+The horizon task expands content into a deterministic sequence of varying facet
+requests and requires one goal-conditioned answer token for every scheduled position.
+It uses all six facets and contains no target padding. The first point has five shuffled
+six-facet schedules (31 output tokens including the end marker), comparing canonical
+late-layer Z against a direct-only causal prompt. Evaluation reports satisfaction in
+four output quartiles, early-minus-late drift, and the same metrics under shuffled Z.
+Both conditions instantiate a 1,152-position model so later horizon points remain
+parameter-matched.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation

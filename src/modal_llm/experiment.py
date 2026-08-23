@@ -48,6 +48,16 @@ def _task_exact(
     return (token_ok | ~active).all(1) & generated[:, -1].eq(out_end)
 
 
+def _sequence_exact(
+    generated: torch.Tensor,
+    target: torch.Tensor,
+    target_mask: torch.Tensor,
+    out_end: int,
+) -> torch.Tensor:
+    token_ok = generated.eq(target)
+    return (token_ok | ~target_mask).all(1) & generated[:, -1].eq(out_end)
+
+
 def _dataset(config: dict[str, Any], split: str, seed: int) -> ConstraintDataset:
     data = config["data"]
     size_key = {"train": "train_size", "validation": "validation_size", "test": "test_size"}[split]
@@ -64,6 +74,7 @@ def _dataset(config: dict[str, Any], split: str, seed: int) -> ConstraintDataset
         corruption_family=corruption_families.get(split),
         goal_prompt_style=str(data.get("goal_prompt_style", "rendered")),
         direct_goal_exposure=float(data.get("direct_goal_exposure", 0.0)),
+        target_repetitions=int(data.get("target_repetitions", 1)),
         namespace=namespaces.get(split),
     )
 
@@ -391,6 +402,150 @@ def evaluate_goal_probes(
         for name, value in values.items():
             metrics[f"{prefix}_{name}"] = value
     return metrics
+
+
+@torch.no_grad()
+def evaluate_horizon(
+    model: ModeTransformer,
+    dataset: ConstraintDataset,
+    config: dict[str, Any],
+    device: torch.device,
+) -> tuple[dict[str, float], list[dict[str, Any]]]:
+    """Evaluate long scheduled outputs with only the required shuffled-Z control."""
+
+    loader = DataLoader(
+        dataset,
+        batch_size=int(config["evaluation"].get("batch_size", 16)),
+        shuffle=False,
+        collate_fn=collate_examples,
+    )
+    model.eval()
+    exact: list[float] = []
+    shuffled_exact: list[float] = []
+    satisfaction: list[float] = []
+    shuffled_satisfaction: list[float] = []
+    quartiles: list[list[float]] = [[] for _ in range(4)]
+    shuffled_quartiles: list[list[float]] = [[] for _ in range(4)]
+    predictions: list[dict[str, Any]] = []
+    base_calls = base_positions = 0
+    intervention_calls = intervention_positions = 0
+    model.reset_compute_stats()
+    started = time.perf_counter()
+    for raw in loader:
+        batch = _move(raw, device)
+        generation_prompt, goal_prompt = model.prompt_channels(batch)
+        before_base = model.compute_stats()
+        generated, goal, _ = model.generate(
+            generation_prompt, batch["target"].shape[1], goal_prompt=goal_prompt
+        )
+        after_base = model.compute_stats()
+        base_calls += after_base["forward_calls"] - before_base["forward_calls"]
+        base_positions += after_base["token_positions"] - before_base["token_positions"]
+        if goal is None:
+            raise RuntimeError("Horizon persistence evaluation requires a goal state")
+        shuffled_generated, _, _ = model.generate(
+            generation_prompt,
+            batch["target"].shape[1],
+            forced_goal=goal.roll(1, 0),
+        )
+        after_intervention = model.compute_stats()
+        intervention_calls += (
+            after_intervention["forward_calls"] - after_base["forward_calls"]
+        )
+        intervention_positions += (
+            after_intervention["token_positions"] - after_base["token_positions"]
+        )
+
+        target_mask = batch["target_mask"]
+        correct = generated.eq(batch["target"]) & target_mask
+        shuffled_correct = shuffled_generated.eq(batch["target"]) & target_mask
+        denominator = target_mask.sum(1).clamp_min(1)
+        batch_satisfaction = correct.sum(1).float() / denominator
+        batch_shuffled_satisfaction = shuffled_correct.sum(1).float() / denominator
+        batch_exact = _sequence_exact(
+            generated, batch["target"], target_mask, model.vocab.OUT_END
+        )
+        batch_shuffled_exact = _sequence_exact(
+            shuffled_generated, batch["target"], target_mask, model.vocab.OUT_END
+        )
+        exact.extend(batch_exact.float().cpu().tolist())
+        shuffled_exact.extend(batch_shuffled_exact.float().cpu().tolist())
+        satisfaction.extend(batch_satisfaction.cpu().tolist())
+        shuffled_satisfaction.extend(batch_shuffled_satisfaction.cpu().tolist())
+
+        active_positions = target_mask[0].nonzero().flatten()
+        for quartile, positions in enumerate(torch.tensor_split(active_positions, 4)):
+            quartiles[quartile].extend(
+                generated[:, positions]
+                .eq(batch["target"][:, positions])
+                .float()
+                .mean(1)
+                .cpu()
+                .tolist()
+            )
+            shuffled_quartiles[quartile].extend(
+                shuffled_generated[:, positions]
+                .eq(batch["target"][:, positions])
+                .float()
+                .mean(1)
+                .cpu()
+                .tolist()
+            )
+
+        for index, example_id in enumerate(raw["ids"]):
+            predictions.append(
+                {
+                    "id": example_id,
+                    "target": raw["target"][index].tolist(),
+                    "generated": generated[index].cpu().tolist(),
+                    "shuffled_generated": shuffled_generated[index].cpu().tolist(),
+                    "satisfaction": float(batch_satisfaction[index]),
+                    "shuffled_satisfaction": float(batch_shuffled_satisfaction[index]),
+                    "exact": bool(batch_exact[index]),
+                    "shuffled_exact": bool(batch_shuffled_exact[index]),
+                }
+            )
+
+    elapsed = time.perf_counter() - started
+    compute = model.compute_stats()
+    metrics = {
+        "task_exact_match": mean(exact),
+        "task_facet_satisfaction": mean(satisfaction),
+        "shuffled_goal_exact_match": mean(shuffled_exact),
+        "shuffled_goal_effect": mean(exact) - mean(shuffled_exact),
+        "shuffled_goal_facet_satisfaction": mean(shuffled_satisfaction),
+        "shuffled_goal_facet_effect": mean(satisfaction) - mean(shuffled_satisfaction),
+        "goal_drift": mean(quartiles[0]) - mean(quartiles[3]),
+        "shuffled_goal_drift": mean(shuffled_quartiles[0]) - mean(
+            shuffled_quartiles[3]
+        ),
+        "evaluation_examples": float(len(dataset)),
+        "target_output_length": float(dataset.max_facets * dataset.target_repetitions + 1),
+        "generated_tokens": float(
+            len(dataset) * (dataset.max_facets * dataset.target_repetitions + 1)
+        ),
+        "inference_forward_calls": float(compute["forward_calls"]),
+        "inference_token_positions": float(compute["token_positions"]),
+        "approx_inference_flops": float(
+            2 * model.parameter_count * compute["token_positions"]
+        ),
+        "base_generation_forward_calls": float(base_calls),
+        "base_generation_token_positions": float(base_positions),
+        "approx_base_generation_flops": float(
+            2 * model.parameter_count * base_positions
+        ),
+        "diagnostic_intervention_forward_calls": float(intervention_calls),
+        "diagnostic_intervention_token_positions": float(intervention_positions),
+        "validation_forward_calls": 0.0,
+        "validation_token_positions": 0.0,
+        "inference_wall_seconds": elapsed,
+    }
+    for index in range(4):
+        metrics[f"task_quartile_{index + 1}_satisfaction"] = mean(quartiles[index])
+        metrics[f"shuffled_goal_quartile_{index + 1}_satisfaction"] = mean(
+            shuffled_quartiles[index]
+        )
+    return metrics, predictions
 
 
 @torch.no_grad()
@@ -798,7 +953,10 @@ def run(config: dict[str, Any], output_root: Path, repository: Path) -> Path:
     )
     train_wall = time.perf_counter() - before
     validation = validation_losses(model, validation_data, config, device)
-    metrics, predictions = evaluate(model, test_data, config, device)
+    if test_data.target_repetitions > 1:
+        metrics, predictions = evaluate_horizon(model, test_data, config, device)
+    else:
+        metrics, predictions = evaluate(model, test_data, config, device)
     metrics.update(
         evaluate_goal_probes(model, train_data, validation_data, test_data, config, device)
     )

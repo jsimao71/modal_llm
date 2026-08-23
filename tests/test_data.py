@@ -118,3 +118,22 @@ def test_direct_goal_exposure_rejects_invalid_probability():
         assert "direct_goal_exposure" in str(error)
     else:
         raise AssertionError("invalid direct goal exposure should fail")
+
+
+def test_long_horizon_task_uses_scheduled_facets_without_padding():
+    dataset = ConstraintDataset(
+        4,
+        seed=19,
+        split="train",
+        min_facets=6,
+        max_facets=6,
+        goal_prompt_style="canonical",
+        target_repetitions=5,
+    )
+    row = dataset[0]
+
+    assert row["target"].numel() == 31
+    assert int(row["target_mask"].sum()) == 30
+    assert row["generation_prompt"].tolist().count(dataset.vocab.requirement(0, 0)) == 5
+    assert dataset.vocab.PAD not in row["target"].tolist()
+    assert int(row["target"].ne(row["counterfactual_target"]).sum()) == 5

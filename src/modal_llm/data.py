@@ -86,6 +86,7 @@ class ConstraintDataset(Dataset):
         corruption_family: str | None = None,
         goal_prompt_style: str = "rendered",
         direct_goal_exposure: float = 0.0,
+        target_repetitions: int = 1,
         namespace: str | None = None,
     ) -> None:
         if split not in self.DEFAULT_PROMPT_FAMILY:
@@ -104,6 +105,7 @@ class ConstraintDataset(Dataset):
         self.corruption_family = corruption_family or self.DEFAULT_CORRUPTION_FAMILY[split]
         self.goal_prompt_style = goal_prompt_style
         self.direct_goal_exposure = float(direct_goal_exposure)
+        self.target_repetitions = int(target_repetitions)
         if self.prompt_family not in PROMPT_FAMILIES:
             raise ValueError(f"Unknown prompt family {self.prompt_family!r}")
         if self.corruption_family not in CORRUPTION_FAMILIES:
@@ -112,6 +114,10 @@ class ConstraintDataset(Dataset):
             raise ValueError(f"Unknown goal prompt style {self.goal_prompt_style!r}")
         if not 0.0 <= self.direct_goal_exposure <= 1.0:
             raise ValueError("direct_goal_exposure must be between 0 and 1")
+        if self.target_repetitions < 1:
+            raise ValueError("target_repetitions must be positive")
+        if self.target_repetitions > 1 and self.min_facets != self.max_facets:
+            raise ValueError("long-horizon tasks require min_facets == max_facets")
         self.vocab = Vocabulary(max_facets)
 
     def __len__(self) -> int:
@@ -193,7 +199,13 @@ class ConstraintDataset(Dataset):
         prompt.append(self.vocab.TASK_END)
         return prompt
 
-    def _render_content(self, order: list[int], family: str) -> list[int]:
+    def _render_content(
+        self,
+        order: list[int],
+        family: str,
+        *,
+        schedule: list[int] | None = None,
+    ) -> list[int]:
         if family == "paraphrase":
             family = "reordered"
             order = list(reversed(order))
@@ -203,10 +215,10 @@ class ConstraintDataset(Dataset):
             "interleaved": self.vocab.TEMPLATE_C,
         }[family]
         content = [self.vocab.TASK_BOS, template, self.vocab.CONTENT_OPEN]
-        facet_order = list(order)
-        if family == "reordered":
+        facet_order = list(schedule) if schedule is not None else list(order)
+        if schedule is None and family == "reordered":
             facet_order = list(reversed(facet_order))
-        elif family == "interleaved":
+        elif schedule is None and family == "interleaved":
             facet_order = list(facet_order[::2] + facet_order[1::2])
         for facet in facet_order:
             content.append(self.vocab.requirement(facet, 0))
@@ -231,6 +243,17 @@ class ConstraintDataset(Dataset):
             return content
         direct_goal = [self.vocab.GOAL_OPEN]
         for facet in exposed:
+            direct_goal.extend(self._requirement_block(facet, values[facet]))
+        direct_goal.append(self.vocab.GOAL_CLOSE)
+        return content[:2] + direct_goal + content[2:]
+
+    def _render_full_scheduled_prompt(
+        self,
+        content: list[int],
+        values: list[int],
+    ) -> list[int]:
+        direct_goal = [self.vocab.GOAL_OPEN]
+        for facet in range(len(values)):
             direct_goal.extend(self._requirement_block(facet, values[facet]))
         direct_goal.append(self.vocab.GOAL_CLOSE)
         return content[:2] + direct_goal + content[2:]
@@ -298,8 +321,18 @@ class ConstraintDataset(Dataset):
         rng.shuffle(order)
         family = prompt_family or self.prompt_family
         prompt = self._render_prompt(rng, values, order, family)
-        content_prompt = self._render_content(order, family)
+        target_schedule: list[int] | None = None
+        if self.target_repetitions > 1:
+            target_schedule = []
+            schedule_rng = self._direct_rng(index)
+            for _ in range(self.target_repetitions):
+                block = list(range(k))
+                schedule_rng.shuffle(block)
+                target_schedule.extend(block)
+        content_prompt = self._render_content(order, family, schedule=target_schedule)
         generation_prompt = self._render_generation_prompt(content_prompt, values, index)
+        if target_schedule is not None:
+            prompt = self._render_full_scheduled_prompt(content_prompt, values)
         if self.goal_prompt_style == "canonical":
             canonical_order = list(range(k))
             goal_prompt = self._render_canonical_goal_prompt(values, canonical_order)
@@ -318,9 +351,20 @@ class ConstraintDataset(Dataset):
                 paraphrase_rng, values, order, "paraphrase"
             )
 
-        target = [self.vocab.answer(facet, values[facet]) for facet in range(k)]
-        target.extend([self.vocab.PAD] * (self.max_facets - k))
+        if target_schedule is None:
+            output_facets = list(range(k))
+            target = [self.vocab.answer(facet, values[facet]) for facet in output_facets]
+            target.extend([self.vocab.PAD] * (self.max_facets - k))
+            target_facets = output_facets + [-1] * (self.max_facets - k)
+            target_mask = [True] * k + [False] * (self.max_facets - k)
+        else:
+            output_facets = target_schedule
+            target = [self.vocab.answer(facet, values[facet]) for facet in output_facets]
+            target_facets = list(output_facets)
+            target_mask = [True] * len(output_facets)
         target.append(self.vocab.OUT_END)
+        target_facets.append(-1)
+        target_mask.append(False)
         corrupted, corruption_type = self._corrupt_candidate(
             rng, target, values, order[-1], index
         )
@@ -354,9 +398,11 @@ class ConstraintDataset(Dataset):
         else:
             raise AssertionError("Counterfactual goal facet not found")
         counterfactual_target = list(target)
-        counterfactual_target[counterfactual_facet] = self.vocab.answer(
-            counterfactual_facet, 1 - values[counterfactual_facet]
-        )
+        for target_position, facet in enumerate(target_facets):
+            if facet == counterfactual_facet:
+                counterfactual_target[target_position] = self.vocab.answer(
+                    counterfactual_facet, 1 - values[counterfactual_facet]
+                )
 
         return {
             "id": f"{self.split}-{index}",
@@ -370,6 +416,8 @@ class ConstraintDataset(Dataset):
             "counterfactual_prompt": torch.tensor(counterfactual_prompt, dtype=torch.long),
             "counterfactual_goal_prompt": torch.tensor(counterfactual_goal_prompt, dtype=torch.long),
             "counterfactual_target": torch.tensor(counterfactual_target, dtype=torch.long),
+            "target_facets": torch.tensor(target_facets, dtype=torch.long),
+            "target_mask": torch.tensor(target_mask, dtype=torch.bool),
             "bits": torch.tensor(bits),
             "active_facets": torch.tensor(active),
             "corrupt_satisfaction": torch.tensor(corrupt_satisfaction),
@@ -395,6 +443,7 @@ class ConstraintDataset(Dataset):
             "corruption_family": self.corruption_family,
             "goal_prompt_style": self.goal_prompt_style,
             "direct_goal_exposure": self.direct_goal_exposure,
+            "target_repetitions": self.target_repetitions,
             "max_facets": self.max_facets,
             "min_facets": self.min_facets,
             "max_distractors": self.max_distractors,
@@ -419,6 +468,8 @@ class ConstraintDataset(Dataset):
                 "counterfactual_prompt",
                 "counterfactual_goal_prompt",
                 "counterfactual_target",
+                "target_facets",
+                "target_mask",
             ):
                 tensor = row[key].contiguous()
                 digest.update(len(tensor).to_bytes(4, "little"))
@@ -469,6 +520,8 @@ def collate_examples(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "counterfactual_prompt": counterfactual_prompts,
         "counterfactual_goal_prompt": counterfactual_goal_prompts,
         "counterfactual_target": torch.stack([row["counterfactual_target"] for row in rows]),
+        "target_facets": torch.stack([row["target_facets"] for row in rows]),
+        "target_mask": torch.stack([row["target_mask"] for row in rows]),
         "bits": torch.stack([row["bits"] for row in rows]),
         "active_facets": torch.stack([row["active_facets"] for row in rows]),
         "corrupt_satisfaction": torch.stack([row["corrupt_satisfaction"] for row in rows]),

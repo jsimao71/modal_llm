@@ -4,6 +4,8 @@ from pathlib import Path
 import torch
 
 from modal_llm import experiment
+from modal_llm.data import ConstraintDataset
+from modal_llm.model import ModeTransformer
 
 
 def test_task_exact_requires_active_facets_and_end_token() -> None:
@@ -14,6 +16,38 @@ def test_task_exact_requires_active_facets_and_end_token() -> None:
     exact = experiment._task_exact(generated, target, active, max_facets=3, out_end=4)
 
     assert exact.tolist() == [True, False]
+
+
+def test_horizon_evaluation_reports_quartiles_and_drift() -> None:
+    dataset = ConstraintDataset(
+        4,
+        seed=23,
+        split="test",
+        min_facets=6,
+        max_facets=6,
+        goal_prompt_style="canonical",
+        target_repetitions=2,
+    )
+    model = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=1,
+        dropout=0.0,
+        max_length=64,
+        generation_prompt_only=True,
+    )
+    config = {"evaluation": {"batch_size": 4}}
+
+    metrics, predictions = experiment.evaluate_horizon(
+        model, dataset, config, torch.device("cpu")
+    )
+
+    assert len(predictions) == 4
+    assert metrics["target_output_length"] == 13.0
+    assert "task_quartile_4_satisfaction" in metrics
+    assert "shuffled_goal_drift" in metrics
 
 
 def test_suite_summary_omits_all_nonfinite_metrics(tmp_path: Path, monkeypatch) -> None:
