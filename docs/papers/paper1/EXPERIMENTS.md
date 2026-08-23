@@ -145,6 +145,13 @@ encoder's goal-only input while retaining one authoritative requirement token pe
 facet. Its reversed-order paraphrase tests order robustness. Generation still receives
 the held-out content channel, and all prompt channels now contribute to the versioned
 dataset SHA-256 rather than only the original full prompt.
+Its checked-in result is
+[`results/z_only_canonical_goal_pilot_iteration1.json`](results/z_only_canonical_goal_pilot_iteration1.json):
+task exact match, held-out probe joint exact match, and complete isolated
+counterfactual control all reach 1.0, while shuffled Z reduces exact match by .900.
+This passes Gates 1--3 at one-seed diagnostic scale and permits a canonical direct-goal
+exposure pilot. It does not establish a headline result or solve goal extraction from
+distractor-bearing rendered prompts.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation

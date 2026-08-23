@@ -1,0 +1,42 @@
+{
+  "status": "one-seed canonical-goal causal-gate diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "condition": {
+    "config_reference": "configs/paper1/z-only-canonical-goal-converged.yaml",
+    "baseline": "B5",
+    "goal_prompt_style": "canonical",
+    "conditioning_mode": "additive",
+    "z_injection_schedule": "late_layers",
+    "goal_vectors": 1,
+    "best_epoch": 40,
+    "exact_match": 1.0,
+    "facet_satisfaction": 1.0,
+    "shuffled_goal_exact_match": 0.099609375,
+    "shuffled_goal_effect": 0.900390625,
+    "zero_goal_exact_match": 0.103515625,
+    "zero_goal_effect": 0.896484375,
+    "constant_goal_effect": 0.908203125,
+    "random_goal_effect": 0.90625,
+    "goal_probe_linear_test_facet_accuracy": 1.0,
+    "goal_probe_linear_test_joint_exact_match": 1.0,
+    "goal_probe_mlp_test_facet_accuracy": 1.0,
+    "goal_probe_mlp_test_joint_exact_match": 1.0,
+    "paraphrase_goal_substitution_exact_match": 0.98828125,
+    "facet_goal_substitution_success": 1.0,
+    "facet_goal_substitution_isolated_success": 1.0,
+    "counterfactual_goal_exact_match": 1.0,
+    "checkpoint_reload_verified": true
+  },
+  "gate_audit": {
+    "gate_1_goal_decodability": "pass in the canonical diagnostic: held-out facet and joint exact probe scores are 1.0",
+    "gate_2_causal_identity": "pass at one-seed diagnostic scale: correct-minus-shuffled exact match is .900; replication remains required for headline use",
+    "gate_3_counterfactual_control": "pass: targeted, isolated, and complete counterfactual success are all 1.0",
+    "decision": "proceed to a one-seed direct-goal exposure curve in the canonical setting; do not make a headline claim or launch the full depth-time grid without later replication and a persistence gate"
+  },
+  "interpretation": [
+    "A single-vector late-layer Z channel can encode and causally control all task facets when the encoder receives an authoritative canonical goal specification.",
+    "The failure on rendered distractor-bearing goals is therefore primarily a goal-extraction and distribution-shift problem, not a fundamental channel-capacity failure.",
+    "Near-perfect reversed-order paraphrase substitution shows that the canonical representation is robust to requirement order in this diagnostic.",
+    "Canonical preprocessing is privileged semantic structure, so this result does not establish superiority over ordinary text prompting; it establishes that the latent channel is functionally sufficient once the goal has been extracted."
+  ]
+}
