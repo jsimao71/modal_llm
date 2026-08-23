@@ -220,6 +220,15 @@ latent memory tokens at every layer, isolating addressable presentation from inc
 encoder-state capacity. It uses the same 80-epoch ceiling and all other horizon data
 and optimizer settings.
 
+That presentation control is complete in
+[`results/horizon_32_structured_prefix_iteration1.json`](results/horizon_32_structured_prefix_iteration1.json).
+It reaches .172 satisfaction and zero exact match, versus .176 and zero for matched
+late-layer additive Z. Its correct-minus-shuffled satisfaction effect is .093, slightly
+larger than additive Z's .086, but the small .007 quartile drift again occurs near
+floor. Six addressable tokens projected from one Z therefore do not repair retrieval,
+despite using more active parameters. The next isolation should increase encoded-state
+structure rather than only expanding a single vector after encoding.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,

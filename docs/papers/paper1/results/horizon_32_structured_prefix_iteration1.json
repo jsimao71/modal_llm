@@ -1,0 +1,56 @@
+{
+  "status": "one-seed 31-output-token continuous-prefix presentation diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "condition": {
+    "config_reference": "configs/paper1/horizon-32-z-prefix-6.yaml",
+    "baseline": "B5",
+    "run_reference": "results/paper1-horizon-32-z-prefix-6/B5/20260823T153132366705Z-seed0",
+    "source_commit": "3f04977",
+    "conditioning_mode": "prefix",
+    "goal_vectors": 1,
+    "prefix_tokens": 6,
+    "best_epoch": 78,
+    "completed_joint_epochs": 80,
+    "goal_warmup_epochs": 10,
+    "parameter_count": 337869,
+    "active_parameter_count": 308230,
+    "validation_lm": 1.1306297034025192,
+    "task_exact_match": 0.0,
+    "task_facet_satisfaction": 0.1718750046857167,
+    "quartile_satisfaction": [
+      0.1689453125,
+      0.1611328125,
+      0.19754464970901608,
+      0.16183036344591528
+    ],
+    "early_minus_late_drift": 0.007114949054084718,
+    "shuffled_goal_exact_match": 0.0,
+    "shuffled_goal_facet_satisfaction": 0.07838541938690469,
+    "correct_minus_shuffled_facet_effect": 0.09348958529881202,
+    "shuffled_quartile_satisfaction": [
+      0.07421875,
+      0.0751953125,
+      0.09821428987197578,
+      0.06696428870782256
+    ],
+    "checkpoint_reload_verified": true
+  },
+  "matched_references": {
+    "single_vector_late_layer_additive_facet_satisfaction": 0.17552083884947933,
+    "single_vector_late_layer_additive_exact_match": 0.0,
+    "single_vector_late_layer_additive_shuffled_effect": 0.0859375022992026,
+    "direct_text_facet_satisfaction": 1.0,
+    "direct_text_exact_match": 1.0
+  },
+  "gate_audit": {
+    "presentation_repair": "fail: six continuous prefix tokens score .172 versus .176 for matched late-layer additive Z",
+    "causal_z_use": "provisional pass at one seed: correct Z improves satisfaction by .093 over shuffled Z",
+    "persistence": "not established: the .007 drift occurs near floor and exact match is zero",
+    "decision": "do not launch longer horizons; test increased or facet-structured encoded state while keeping the 31-token task fixed"
+  },
+  "interpretation": [
+    "Making six attention-addressable memory positions from one Z does not improve scheduled retrieval over globally additive Z.",
+    "The prefix condition has more active parameters and a slightly larger shuffled-Z effect, but neither produces a complete output.",
+    "The failure is therefore not repaired by presentation alone; the next isolation should increase encoded-state structure rather than merely expanding one vector after encoding."
+  ]
+}
