@@ -64,6 +64,8 @@ modal-llm train-eval --config configs/paper1/horizon-32-z-multivector-prefix-6.y
 modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-prefix.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-signaled.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-signaled-converged.yaml
+modal-llm train-eval --config configs/paper1/horizon-64-direct.yaml
+modal-llm train-eval --config configs/paper1/horizon-64-z-facet-slot-signaled.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -307,6 +309,13 @@ signaled interface therefore passes the one-seed 31-token task and causal gates 
 sufficient optimization. Localized control remains incomplete and epoch 120 is still
 selected, so advance only to the next approximately 64-token diagnostic point rather
 than the full grid or headline replication.
+
+The next horizon point uses ten independently shuffled six-facet blocks, yielding 61
+output tokens including the end marker. Direct text and signaled facet-slot Z retain
+the same seed, two-layer 64-wide architecture, data sizes, optimizer, 120-epoch ceiling,
+and causal evaluator used at the converged 31-token point. Evaluation batch size falls
+from 16 to 8 only for memory safety. Run direct text first as the task-learnability
+gate, then correct/shuffled/counterfactual Z.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
