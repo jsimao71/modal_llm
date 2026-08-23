@@ -37,6 +37,17 @@ def _move(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
     return {key: value.to(device) if torch.is_tensor(value) else value for key, value in batch.items()}
 
 
+def _task_exact(
+    generated: torch.Tensor,
+    target: torch.Tensor,
+    active: torch.Tensor,
+    max_facets: int,
+    out_end: int,
+) -> torch.Tensor:
+    token_ok = generated[:, :max_facets].eq(target[:, :max_facets])
+    return (token_ok | ~active).all(1) & generated[:, -1].eq(out_end)
+
+
 def _dataset(config: dict[str, Any], split: str, seed: int) -> ConstraintDataset:
     data = config["data"]
     size_key = {"train": "train_size", "validation": "validation_size", "test": "test_size"}[split]
@@ -406,6 +417,8 @@ def evaluate(
     random_exact: list[float] = []
     paraphrase_goal_exact: list[float] = []
     facet_substitution_success: list[float] = []
+    facet_substitution_isolated_success: list[float] = []
+    counterfactual_exact: list[float] = []
     no_mode_exact: list[float] = []
     swapped_mode_exact: list[float] = []
     paraphrase_similarity: list[float] = []
@@ -432,9 +445,16 @@ def evaluate(
             batch["target"][:, : model.vocab.max_facets]
         )
         facet_fraction = (token_ok & active).sum(1).float() / active.sum(1)
-        batch_exact = ((token_ok | ~active).all(1) & generated[:, -1].eq(model.vocab.OUT_END))
+        batch_exact = _task_exact(
+            generated,
+            batch["target"],
+            active,
+            model.vocab.max_facets,
+            model.vocab.OUT_END,
+        )
         exact.extend(batch_exact.float().cpu().tolist())
         facets.extend(facet_fraction.cpu().tolist())
+        batch_interventions: dict[str, torch.Tensor] = {}
 
         if model.spec.use_goal and goal is not None:
             zeros = torch.zeros_like(goal)
@@ -456,22 +476,24 @@ def evaluate(
             random_generated, _, _ = model.generate(
                 generation_prompt, batch["target"].shape[1], forced_goal=random_goal
             )
-            zero_ok = zero_generated[:, : model.vocab.max_facets].eq(
-                batch["target"][:, : model.vocab.max_facets]
-            )
-            shuffle_ok = shuffled_generated[:, : model.vocab.max_facets].eq(
-                batch["target"][:, : model.vocab.max_facets]
-            )
-            constant_ok = constant_generated[:, : model.vocab.max_facets].eq(
-                batch["target"][:, : model.vocab.max_facets]
-            )
-            random_ok = random_generated[:, : model.vocab.max_facets].eq(
-                batch["target"][:, : model.vocab.max_facets]
-            )
-            zero_exact.extend((zero_ok | ~active).all(1).float().cpu().tolist())
-            shuffle_exact.extend((shuffle_ok | ~active).all(1).float().cpu().tolist())
-            constant_exact.extend((constant_ok | ~active).all(1).float().cpu().tolist())
-            random_exact.extend((random_ok | ~active).all(1).float().cpu().tolist())
+            for values, destination in (
+                (zero_generated, zero_exact),
+                (shuffled_generated, shuffle_exact),
+                (constant_generated, constant_exact),
+                (random_generated, random_exact),
+            ):
+                destination.extend(
+                    _task_exact(
+                        values,
+                        batch["target"],
+                        active,
+                        model.vocab.max_facets,
+                        model.vocab.OUT_END,
+                    )
+                    .float()
+                    .cpu()
+                    .tolist()
+                )
             paraphrase_goals = model.paraphrase_goal_channel(batch)
             _, paraphrase_goal = model.encode(paraphrase_goals)
             goal_flat = goal.reshape(goal.shape[0], -1)
@@ -488,10 +510,18 @@ def evaluate(
             paraphrase_generated, _, _ = model.generate(
                 generation_prompt, batch["target"].shape[1], forced_goal=paraphrase_goal
             )
-            paraphrase_ok = paraphrase_generated[:, : model.vocab.max_facets].eq(
-                batch["target"][:, : model.vocab.max_facets]
+            paraphrase_goal_exact.extend(
+                _task_exact(
+                    paraphrase_generated,
+                    batch["target"],
+                    active,
+                    model.vocab.max_facets,
+                    model.vocab.OUT_END,
+                )
+                .float()
+                .cpu()
+                .tolist()
             )
-            paraphrase_goal_exact.extend((paraphrase_ok | ~active).all(1).float().cpu().tolist())
 
             _, counterfactual_goal = model.encode(model.counterfactual_goal_channel(batch))
             substituted, _, _ = model.generate(
@@ -502,6 +532,32 @@ def evaluate(
                 row_index, batch["corrupt_facet"]
             ].eq(batch["counterfactual_target"][row_index, batch["corrupt_facet"]])
             facet_substitution_success.extend(changed.float().cpu().tolist())
+            untouched = active.clone()
+            untouched[row_index, batch["corrupt_facet"]] = False
+            untouched_correct = (
+                substituted[:, : model.vocab.max_facets].eq(
+                    batch["target"][:, : model.vocab.max_facets]
+                )
+                | ~untouched
+            ).all(1)
+            isolated = (
+                changed
+                & untouched_correct
+                & substituted[:, -1].eq(model.vocab.OUT_END)
+            )
+            facet_substitution_isolated_success.extend(isolated.float().cpu().tolist())
+            counterfactual_exact.extend(
+                _task_exact(
+                    substituted,
+                    batch["counterfactual_target"],
+                    active,
+                    model.vocab.max_facets,
+                    model.vocab.OUT_END,
+                )
+                .float()
+                .cpu()
+                .tolist()
+            )
 
             mode_weights = model.mode_embedding.weight.detach().clone()
             model.mode_embedding.weight.zero_()
@@ -509,10 +565,18 @@ def evaluate(
                 generation_prompt, batch["target"].shape[1], goal_prompt=goal_prompt
             )
             model.mode_embedding.weight.copy_(mode_weights)
-            no_mode_ok = without_mode[:, : model.vocab.max_facets].eq(
-                batch["target"][:, : model.vocab.max_facets]
+            no_mode_exact.extend(
+                _task_exact(
+                    without_mode,
+                    batch["target"],
+                    active,
+                    model.vocab.max_facets,
+                    model.vocab.OUT_END,
+                )
+                .float()
+                .cpu()
+                .tolist()
             )
-            no_mode_exact.extend((no_mode_ok | ~active).all(1).float().cpu().tolist())
 
             swapped = mode_weights.clone()
             swapped[[0, 1]] = swapped[[1, 0]]
@@ -521,10 +585,26 @@ def evaluate(
                 generation_prompt, batch["target"].shape[1], goal_prompt=goal_prompt
             )
             model.mode_embedding.weight.copy_(mode_weights)
-            swapped_ok = swapped_mode[:, : model.vocab.max_facets].eq(
-                batch["target"][:, : model.vocab.max_facets]
+            swapped_mode_exact.extend(
+                _task_exact(
+                    swapped_mode,
+                    batch["target"],
+                    active,
+                    model.vocab.max_facets,
+                    model.vocab.OUT_END,
+                )
+                .float()
+                .cpu()
+                .tolist()
             )
-            swapped_mode_exact.extend((swapped_ok | ~active).all(1).float().cpu().tolist())
+            batch_interventions = {
+                "zero_generated": zero_generated,
+                "shuffled_generated": shuffled_generated,
+                "constant_generated": constant_generated,
+                "random_generated": random_generated,
+                "paraphrase_generated": paraphrase_generated,
+                "counterfactual_generated": substituted,
+            }
 
         after_interventions = model.compute_stats()
         intervention_calls += after_interventions["forward_calls"] - after_base["forward_calls"]
@@ -566,6 +646,15 @@ def evaluate(
                 "exact": bool(batch_exact[index]),
                 "corruption_type": raw["corruption_types"][index],
             }
+            if batch_interventions:
+                row.update(
+                    {
+                        name: values[index].cpu().tolist()
+                        for name, values in batch_interventions.items()
+                    },
+                    counterfactual_target=raw["counterfactual_target"][index].tolist(),
+                    counterfactual_facet=int(raw["corrupt_facet"][index]),
+                )
             if positive_probability is not None and negative_probability is not None:
                 row.update(
                     positive_score=float(positive_probability[index]),
@@ -610,6 +699,10 @@ def evaluate(
             ),
             paraphrase_goal_substitution_exact_match=mean(paraphrase_goal_exact),
             facet_goal_substitution_success=mean(facet_substitution_success),
+            facet_goal_substitution_isolated_success=mean(
+                facet_substitution_isolated_success
+            ),
+            counterfactual_goal_exact_match=mean(counterfactual_exact),
             no_mode_embedding_exact_match=mean(no_mode_exact),
             swapped_encode_generate_mode_exact_match=mean(swapped_mode_exact),
         )

@@ -122,6 +122,13 @@ continuous prefix. This remains an architecture diagnostic rather than a general
 the text condition processes a longer distractor-bearing prompt, whereas the latent
 conditions separately encode the goal and generate from the content channel.
 
+All runs after the prefix-KV pilot use one shared exact-match definition for primary
+and intervention outputs, including the required end token. Counterfactual evaluation
+additionally reports full counterfactual exact match and isolated facet-swap success,
+which requires the selected facet to change correctly while every untouched active
+facet and the end token remain correct. Raw intervention generations are retained in
+`predictions.jsonl` for auditability.
+
 ## Main model and five-seed baseline suite
 
 ```powershell

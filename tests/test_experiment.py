@@ -1,7 +1,19 @@
 import json
 from pathlib import Path
 
+import torch
+
 from modal_llm import experiment
+
+
+def test_task_exact_requires_active_facets_and_end_token() -> None:
+    target = torch.tensor([[20, 21, 0, 4], [20, 21, 0, 4]])
+    active = torch.tensor([[True, True, False], [True, True, False]])
+    generated = torch.tensor([[20, 21, 99, 4], [20, 21, 0, 3]])
+
+    exact = experiment._task_exact(generated, target, active, max_facets=3, out_end=4)
+
+    assert exact.tolist() == [True, False]
 
 
 def test_suite_summary_omits_all_nonfinite_metrics(tmp_path: Path, monkeypatch) -> None:
