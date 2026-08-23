@@ -63,6 +63,7 @@ modal-llm train-eval --config configs/paper1/horizon-32-z-prefix-6.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-multivector-prefix-6.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-prefix.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-signaled.yaml
+modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-signaled-converged.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -292,6 +293,9 @@ large gains from .008 and .187. However, task and counterfactual exact match rem
 zero, epoch 80 is selected, and validation LM is still declining at .308. This is the
 first strong long-schedule Z mechanism result, but it is not converged or complete.
 Extend this exact condition at 31 tokens before increasing horizon.
+The convergence extension changes only the joint ceiling from 80 to 120 epochs and
+patience from 8 to 10 validations. It preserves the seed, initialization trajectory,
+data, model, optimizer, slot interface, and causal evaluator.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
