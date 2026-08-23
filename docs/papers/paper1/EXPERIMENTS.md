@@ -264,6 +264,17 @@ directly as six latent memory tokens without flattening or remixing them. Evalua
 also replaces one slot with its matched counterfactual and reports selected-facet
 satisfaction, untouched-facet satisfaction, and full counterfactual exact match.
 
+The aligned-slot result is stored in
+[`results/horizon_32_facet_slot_prefix_iteration1.json`](results/horizon_32_facet_slot_prefix_iteration1.json).
+It reaches .161 satisfaction and zero exact match, below generic six-vector prefix.
+Correct-minus-shuffled satisfaction is .081. More decisively, replacing the selected
+facet slot with its counterfactual changes the corresponding scheduled positions
+correctly only .008 of the time; full counterfactual exact match is zero. Explicit
+slot extraction, slot-level value supervision, and direct slot presentation therefore
+do not establish localized behavioral control. Longer horizons and facet-swap claims
+remain gated. Next diagnose latent-prefix token signaling or encode--generate gradient
+compatibility rather than adding capacity.
+
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
 additionally reports full counterfactual exact match and isolated facet-swap success,

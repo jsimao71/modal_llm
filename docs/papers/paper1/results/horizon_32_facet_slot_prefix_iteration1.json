@@ -1,0 +1,57 @@
+{
+  "status": "one-seed 31-output-token facet-aligned slot diagnostic; not a headline result",
+  "date": "2026-08-23",
+  "condition": {
+    "config_reference": "configs/paper1/horizon-32-z-facet-slot-prefix.yaml",
+    "baseline": "B5",
+    "run_reference": "results/paper1-horizon-32-z-facet-slot-prefix/B5/20260823T161734359649Z-seed0",
+    "source_commit": "71e8698",
+    "goal_pooling": "facet_tokens",
+    "conditioning_mode": "slot_prefix",
+    "goal_vectors": 6,
+    "prefix_tokens": 6,
+    "best_epoch": 80,
+    "completed_joint_epochs": 80,
+    "goal_warmup_epochs": 10,
+    "parameter_count": 1552014,
+    "active_parameter_count": 180929,
+    "validation_goal": 0.008707144297659397,
+    "validation_lm": 1.1445137560367584,
+    "task_exact_match": 0.0,
+    "task_facet_satisfaction": 0.16145833852351643,
+    "quartile_satisfaction": [
+      0.1611328125,
+      0.1494140625,
+      0.16852679185103625,
+      0.1685267916182056
+    ],
+    "early_minus_late_drift": -0.007393979118205607,
+    "shuffled_goal_exact_match": 0.0,
+    "shuffled_goal_facet_satisfaction": 0.08046875288709998,
+    "correct_minus_shuffled_facet_effect": 0.08098958563641645,
+    "facet_slot_swap_exact_match": 0.0,
+    "facet_slot_swap_selected_satisfaction": 0.007812500116415322,
+    "facet_slot_swap_untouched_satisfaction": 0.18687499896623194,
+    "checkpoint_reload_verified": true
+  },
+  "matched_references": {
+    "generic_six_vector_prefix_facet_satisfaction": 0.1846354219596833,
+    "generic_six_vector_prefix_shuffled_effect": 0.09270833557820879,
+    "one_vector_prefix_facet_satisfaction": 0.1718750046857167,
+    "direct_text_facet_satisfaction": 1.0,
+    "direct_text_exact_match": 1.0
+  },
+  "gate_audit": {
+    "facet_aligned_representation": "auxiliary objective passes numerically with validation goal loss .00871",
+    "task_use": "fail: satisfaction is .161 and exact match is zero",
+    "localized_counterfactual_control": "fail: the swapped slot changes selected scheduled positions correctly in only .008 of cases and never yields a complete counterfactual output",
+    "persistence": "not established: flat quartiles remain near floor",
+    "decision": "do not run longer horizons or facet-swap claims; diagnose why latent prefix states are not consumed effectively, including generation-position/slot-identity signaling and encode-generate optimization compatibility"
+  },
+  "interpretation": [
+    "Explicitly extracting, supervising, and directly presenting one slot per facet does not improve scheduled generation.",
+    "The counterfactual slot intervention provides direct evidence that nominal slot alignment does not translate into localized behavioral control.",
+    "Because direct text solves the same schedule perfectly, the remaining failure lies in how encoded hidden states are made usable by generation or in shared encode-generate optimization, not task learnability.",
+    "The next diagnostic should repair latent-prefix token signaling or measure encode-generate gradient compatibility before adding capacity, depth, or horizon."
+  ]
+}
