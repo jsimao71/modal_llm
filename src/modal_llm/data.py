@@ -11,9 +11,10 @@ import torch
 from torch.utils.data import Dataset
 
 
-GENERATOR_VERSION = "independent-facets-v2"
+GENERATOR_VERSION = "independent-facets-v3"
 PROMPT_FAMILIES = {"standard", "reordered", "interleaved", "paraphrase"}
 CORRUPTION_FAMILIES = {"single_flip", "late_flip", "mixed"}
+GOAL_PROMPT_STYLES = {"rendered", "canonical"}
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,7 @@ class ConstraintDataset(Dataset):
         split: str = "train",
         prompt_family: str | None = None,
         corruption_family: str | None = None,
+        goal_prompt_style: str = "rendered",
         namespace: str | None = None,
     ) -> None:
         if split not in self.DEFAULT_PROMPT_FAMILY:
@@ -99,10 +101,13 @@ class ConstraintDataset(Dataset):
             raise ValueError(f"Unknown RNG namespace {self.namespace!r}")
         self.prompt_family = prompt_family or self.DEFAULT_PROMPT_FAMILY[split]
         self.corruption_family = corruption_family or self.DEFAULT_CORRUPTION_FAMILY[split]
+        self.goal_prompt_style = goal_prompt_style
         if self.prompt_family not in PROMPT_FAMILIES:
             raise ValueError(f"Unknown prompt family {self.prompt_family!r}")
         if self.corruption_family not in CORRUPTION_FAMILIES:
             raise ValueError(f"Unknown corruption family {self.corruption_family!r}")
+        if self.goal_prompt_style not in GOAL_PROMPT_STYLES:
+            raise ValueError(f"Unknown goal prompt style {self.goal_prompt_style!r}")
         self.vocab = Vocabulary(max_facets)
 
     def __len__(self) -> int:
@@ -210,6 +215,17 @@ class ConstraintDataset(Dataset):
         prompt.extend([self.vocab.GOAL_CLOSE, self.vocab.TASK_END])
         return prompt
 
+    def _render_canonical_goal_prompt(
+        self,
+        values: list[int],
+        order: list[int],
+    ) -> list[int]:
+        prompt = [self.vocab.TASK_BOS, self.vocab.GOAL_OPEN]
+        for facet in order:
+            prompt.extend(self._requirement_block(facet, values[facet]))
+        prompt.extend([self.vocab.GOAL_CLOSE, self.vocab.TASK_END])
+        return prompt
+
     def _corrupt_candidate(
         self,
         rng: random.Random,
@@ -251,14 +267,23 @@ class ConstraintDataset(Dataset):
         family = prompt_family or self.prompt_family
         prompt = self._render_prompt(rng, values, order, family)
         content_prompt = self._render_content(order, family)
-        goal_prompt = self._render_goal_only_prompt(rng, values, order, family)
+        if self.goal_prompt_style == "canonical":
+            canonical_order = list(range(k))
+            goal_prompt = self._render_canonical_goal_prompt(values, canonical_order)
+        else:
+            goal_prompt = self._render_goal_only_prompt(rng, values, order, family)
         paraphrase_rng = random.Random(self.seed * 1_000_003 + index + 40_000_087)
         paraphrase_prompt = self._render_prompt(
             paraphrase_rng, values, order, "paraphrase"
         )
-        paraphrase_goal_prompt = self._render_goal_only_prompt(
-            paraphrase_rng, values, order, "paraphrase"
-        )
+        if self.goal_prompt_style == "canonical":
+            paraphrase_goal_prompt = self._render_canonical_goal_prompt(
+                values, list(reversed(range(k)))
+            )
+        else:
+            paraphrase_goal_prompt = self._render_goal_only_prompt(
+                paraphrase_rng, values, order, "paraphrase"
+            )
 
         target = [self.vocab.answer(facet, values[facet]) for facet in range(k)]
         target.extend([self.vocab.PAD] * (self.max_facets - k))
@@ -335,6 +360,7 @@ class ConstraintDataset(Dataset):
             "size": self.size,
             "prompt_family": self.prompt_family,
             "corruption_family": self.corruption_family,
+            "goal_prompt_style": self.goal_prompt_style,
             "max_facets": self.max_facets,
             "min_facets": self.min_facets,
             "max_distractors": self.max_distractors,
@@ -349,7 +375,16 @@ class ConstraintDataset(Dataset):
         for index in range(len(self)):
             row = self[index]
             for key in (
-                "prompt", "paraphrase_prompt", "target", "corrupted", "counterfactual_prompt"
+                "prompt",
+                "generation_prompt",
+                "goal_prompt",
+                "paraphrase_prompt",
+                "paraphrase_goal_prompt",
+                "target",
+                "corrupted",
+                "counterfactual_prompt",
+                "counterfactual_goal_prompt",
+                "counterfactual_target",
             ):
                 tensor = row[key].contiguous()
                 digest.update(len(tensor).to_bytes(4, "little"))

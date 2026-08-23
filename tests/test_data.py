@@ -28,6 +28,29 @@ def test_examples_expose_separate_generation_and_goal_prompts():
     assert int(row["goal_prompt"].ne(row["counterfactual_goal_prompt"]).sum()) == 1
 
 
+def test_canonical_goal_prompt_contains_only_authoritative_requirements():
+    dataset = ConstraintDataset(
+        4, seed=5, split="test", goal_prompt_style="canonical"
+    )
+    row = dataset[0]
+    goal = row["goal_prompt"].tolist()
+    paraphrase = row["paraphrase_goal_prompt"].tolist()
+    forbidden = {
+        dataset.vocab.DISTRACTOR_OPEN,
+        dataset.vocab.DISTRACTOR_CLOSE,
+        dataset.vocab.FILLER,
+        dataset.vocab.TEMPLATE_A,
+        dataset.vocab.TEMPLATE_B,
+        dataset.vocab.TEMPLATE_C,
+    }
+
+    assert forbidden.isdisjoint(goal)
+    assert goal.count(dataset.vocab.REQ_OPEN) == row["facet_count"]
+    assert goal.count(dataset.vocab.REQ_CLOSE) == row["facet_count"]
+    assert goal != paraphrase
+    assert int(row["goal_prompt"].ne(row["counterfactual_goal_prompt"]).sum()) == 1
+
+
 def test_splits_use_held_out_prompt_and_corruption_families():
     train = ConstraintDataset(8, seed=3, split="train")
     validation = ConstraintDataset(8, seed=3, split="validation")
@@ -55,3 +78,12 @@ def test_dataset_content_hash_is_stable_and_split_sensitive():
     held_out = ConstraintDataset(4, seed=13, split="test")
     assert first.content_hash() == same.content_hash()
     assert first.content_hash() != held_out.content_hash()
+
+
+def test_dataset_content_hash_covers_goal_prompt_style():
+    rendered = ConstraintDataset(4, seed=13, split="train")
+    canonical = ConstraintDataset(
+        4, seed=13, split="train", goal_prompt_style="canonical"
+    )
+
+    assert rendered.content_hash() != canonical.content_hash()

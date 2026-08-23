@@ -62,6 +62,7 @@ def _dataset(config: dict[str, Any], split: str, seed: int) -> ConstraintDataset
         max_filler=int(data.get("max_filler", 3)),
         prompt_family=prompt_families.get(split),
         corruption_family=corruption_families.get(split),
+        goal_prompt_style=str(data.get("goal_prompt_style", "rendered")),
         namespace=namespaces.get(split),
     )
 

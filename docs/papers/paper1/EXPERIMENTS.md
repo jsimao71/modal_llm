@@ -50,6 +50,7 @@ modal-llm train-eval --config configs/paper1/z-only-all-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-periodic.yaml
 modal-llm train-eval --config configs/paper1/z-only-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-late-layers-converged.yaml
+modal-llm train-eval --config configs/paper1/z-only-canonical-goal-converged.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -138,6 +139,12 @@ linear-probe facet accuracy remains .661 and isolated/full counterfactual succes
 only .285. Gates 1--3 therefore do not permit the direct-access, depth, or horizon
 sweeps yet; the next run must first isolate representation and channel capacity with a
 canonical authoritative goal prompt.
+
+The canonical-goal diagnostic removes templates, filler, and distractor blocks from the
+encoder's goal-only input while retaining one authoritative requirement token per active
+facet. Its reversed-order paraphrase tests order robustness. Generation still receives
+the held-out content channel, and all prompt channels now contribute to the versioned
+dataset SHA-256 rather than only the original full prompt.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation
