@@ -49,6 +49,28 @@ def test_horizon_evaluation_reports_quartiles_and_drift() -> None:
     assert "task_quartile_4_satisfaction" in metrics
     assert "shuffled_goal_drift" in metrics
 
+    aligned = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=1,
+        dropout=0.0,
+        max_length=64,
+        generation_prompt_only=True,
+        goal_vectors=6,
+        goal_pooling="facet_tokens",
+        conditioning_mode="slot_prefix",
+        prefix_tokens=6,
+    )
+    aligned_metrics, aligned_predictions = experiment.evaluate_horizon(
+        aligned, dataset, config, torch.device("cpu")
+    )
+    assert len(aligned_predictions) == 4
+    assert "facet_slot_swap_exact_match" in aligned_metrics
+    assert "facet_slot_swap_selected_satisfaction" in aligned_metrics
+    assert "facet_slot_swap_untouched_satisfaction" in aligned_metrics
+
     direct = ModeTransformer(
         dataset.vocab,
         "B0",

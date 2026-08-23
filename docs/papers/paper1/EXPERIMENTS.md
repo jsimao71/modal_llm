@@ -61,6 +61,7 @@ modal-llm train-eval --config configs/paper1/horizon-32-z-converged.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-direct-converged.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-prefix-6.yaml
 modal-llm train-eval --config configs/paper1/horizon-32-z-multivector-prefix-6.yaml
+modal-llm train-eval --config configs/paper1/horizon-32-z-facet-slot-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-multivector-late-layers.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix.yaml
 modal-llm train-eval --config configs/paper1/z-only-prefix-2.yaml
@@ -241,11 +242,27 @@ The multi-vector result is stored in
 with the matched conditioning comparison in
 [`results/horizon_32_conditioning_comparison_iteration1.csv`](results/horizon_32_conditioning_comparison_iteration1.csv).
 Six vectors reach .185 satisfaction and zero exact match, only .013 above the
-one-vector prefix condition despite 3.07 times its active parameters. Validation goal
+one-vector prefix condition despite 1.61 times its active parameters. Validation goal
 loss falls sharply from .0726 to .00329, but the shuffled-Z effect remains .093. This
 decodability-use gap localizes the main failure to query-specific generator access,
 not raw latent capacity. Do not add more generic vectors or increase horizon next;
 test explicit facet-to-memory coupling or aligned supervision.
+
+The active-parameter ratio above corrects an instrumentation error discovered during
+the next implementation step: earlier runs counted every available conditioning
+projection as active even when the selected mode did not execute it, and omitted
+direct learned queries. Total parameter counts and all behavioral metrics were
+unaffected. Corrected active counts are 205,830 for one-vector prefix and 331,014 for
+six-vector prefix; the immutable raw run artifacts retain their originally reported
+counts and total-parameter-based approximate FLOPs for provenance. Future approximate
+FLOPs use corrected executed-mode active counts.
+
+The aligned-slot diagnostic adds two opt-in mechanisms. `goal_pooling: facet_tokens`
+extracts each canonical requirement into its known facet slot and applies a shared
+slot-level value objective. `conditioning_mode: slot_prefix` exposes those slots
+directly as six latent memory tokens without flattening or remixing them. Evaluation
+also replaces one slot with its matched counterfactual and reports selected-facet
+satisfaction, untouched-facet satisfaction, and full counterfactual exact match.
 
 All runs after the prefix-KV pilot use one shared exact-match definition for primary
 and intervention outputs, including the required end token. Counterfactual evaluation

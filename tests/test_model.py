@@ -155,6 +155,60 @@ def test_multivector_goal_state_shapes_and_validation_are_supported():
     assert validation_facets.shape == (2, dataset.vocab.max_facets)
 
 
+def test_facet_token_slots_are_aligned_and_exposed_directly_as_prefix() -> None:
+    dataset = ConstraintDataset(
+        4,
+        seed=2,
+        split="train",
+        min_facets=4,
+        max_facets=4,
+        goal_prompt_style="canonical",
+    )
+    batch = collate_examples([dataset[0], dataset[1]])
+    model = ModeTransformer(
+        dataset.vocab,
+        "B5",
+        d_model=16,
+        nhead=4,
+        layers=1,
+        dropout=0.0,
+        generation_prompt_only=True,
+        goal_vectors=4,
+        goal_pooling="facet_tokens",
+        conditioning_mode="slot_prefix",
+        prefix_tokens=4,
+    ).eval()
+
+    _, goal = model.encode(batch["goal_prompt"])
+    context = model.prepare_generation(
+        batch["generation_prompt"], goal_prompt=batch["goal_prompt"]
+    )
+    mode = model.mode_embedding.weight[1][None, None, :]
+
+    assert goal.shape == (2, 4, 16)
+    assert context.prefix_length == batch["generation_prompt"].shape[1] + 4
+    assert torch.allclose(context.prefix[:, -4:], goal + mode)
+    assert torch.isfinite(model.goal_objective(batch)["total"])
+
+
+def test_facet_token_slots_require_one_vector_per_facet() -> None:
+    dataset, _ = _batch()
+    try:
+        ModeTransformer(
+            dataset.vocab,
+            "B5",
+            d_model=16,
+            nhead=4,
+            layers=1,
+            goal_vectors=2,
+            goal_pooling="facet_tokens",
+        )
+    except ValueError as error:
+        assert "one goal vector per facet" in str(error)
+    else:
+        raise AssertionError("Expected incompatible facet slot count to fail")
+
+
 def test_goal_injection_schedule_selects_expected_layers():
     dataset, _ = _batch()
     model = ModeTransformer(

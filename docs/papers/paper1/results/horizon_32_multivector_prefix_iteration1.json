@@ -13,7 +13,8 @@
     "completed_joint_epochs": 80,
     "goal_warmup_epochs": 10,
     "parameter_count": 1551949,
-    "active_parameter_count": 945030,
+    "active_parameter_count_reported_before_instrumentation_fix": 945030,
+    "active_parameter_count_corrected": 331014,
     "validation_goal": 0.0032859683997230604,
     "validation_lm": 1.106704220175743,
     "task_exact_match": 0.0,
@@ -41,13 +42,14 @@
     "one_vector_prefix_exact_match": 0.0,
     "one_vector_prefix_shuffled_effect": 0.09348958529881202,
     "one_vector_prefix_validation_goal": 0.0725635988637805,
-    "one_vector_prefix_active_parameter_count": 308230,
+    "one_vector_prefix_active_parameter_count_reported_before_instrumentation_fix": 308230,
+    "one_vector_prefix_active_parameter_count_corrected": 205830,
     "direct_text_facet_satisfaction": 1.0,
     "direct_text_exact_match": 1.0
   },
   "comparisons": {
     "facet_gain_over_one_vector_prefix": 0.012760417273966595,
-    "active_parameter_ratio_over_one_vector_prefix": 3.065990981409986,
+    "active_parameter_ratio_over_one_vector_prefix_corrected": 1.6081912257688384,
     "validation_goal_loss_ratio_to_one_vector_prefix": 0.04528391090893147
   },
   "gate_audit": {
@@ -59,7 +61,7 @@
   "interpretation": [
     "Six learned-query vectors substantially improve the auxiliary held-out goal objective but barely improve generation.",
     "The decodability-use gap localizes the main failure to conditioning or query-specific readout rather than raw latent capacity.",
-    "Generic multi-vector expansion costs over three times as many active parameters as the one-vector prefix condition without producing any complete output.",
+    "After correcting active-parameter instrumentation, generic multi-vector expansion costs 1.61 times as many active parameters as the one-vector prefix condition without producing any complete output.",
     "The next mechanism should explicitly couple requested facets to latent memory or directly supervise vector-to-facet alignment rather than adding unspecialized vectors."
   ]
 }

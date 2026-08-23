@@ -71,6 +71,7 @@ class ModeTransformer(nn.Module):
         max_length: int = 128,
         generation_prompt_only: bool = False,
         goal_vectors: int = 1,
+        goal_pooling: str = "learned_queries",
         z_injection_schedule: str = "input_only",
         z_injection_period: int = 2,
         conditioning_mode: str = "additive",
@@ -84,11 +85,18 @@ class ModeTransformer(nn.Module):
         self.d_model = d_model
         self.generation_prompt_only = generation_prompt_only
         self.goal_vectors = goal_vectors
+        self.goal_pooling = goal_pooling
         self.latent_width = d_model * goal_vectors
         self.z_injection_schedule = z_injection_schedule
         self.z_injection_period = z_injection_period
         self.conditioning_mode = conditioning_mode
         self.prefix_tokens = prefix_tokens
+        if goal_pooling not in {"learned_queries", "facet_tokens"}:
+            raise ValueError(f"Unknown goal_pooling {goal_pooling!r}")
+        if goal_pooling == "facet_tokens" and goal_vectors != vocab.max_facets:
+            raise ValueError("facet_tokens pooling requires one goal vector per facet")
+        if conditioning_mode == "slot_prefix" and prefix_tokens != goal_vectors:
+            raise ValueError("slot_prefix conditioning requires prefix_tokens == goal_vectors")
         self.token_embedding = nn.Embedding(vocab.size, d_model, padding_idx=vocab.PAD)
         self.position_embedding = nn.Embedding(max_length, d_model)
         self.mode_embedding = nn.Embedding(len(MODES), d_model)
@@ -113,6 +121,7 @@ class ModeTransformer(nn.Module):
         self.lm_head = nn.Linear(d_model, vocab.size, bias=False)
         self.lm_head.weight = self.token_embedding.weight
         self.facet_head = nn.Linear(self.latent_width, vocab.max_facets)
+        self.goal_slot_facet_head = nn.Linear(d_model, 1)
         validator_width = self.latent_width * 4
         self.validator_body = nn.Sequential(
             nn.Linear(validator_width, self.latent_width),
@@ -154,26 +163,40 @@ class ModeTransformer(nn.Module):
             self.final_norm,
             self.lm_head,
         ]
+        direct_parameters: list[nn.Parameter] = []
         if self.spec.matched_mlp:
             modules.append(self.match_control)
         if self.spec.use_goal:
-            modules.extend(
-                [
-                    self.goal_head,
-                    self.goal_condition,
-                    self.goal_prefix,
-                    self.goal_prefix_keys,
-                    self.goal_prefix_values,
-                    self.facet_head,
-                ]
-            )
+            modules.append(self.goal_head)
+            if self.conditioning_mode == "additive":
+                modules.append(self.goal_condition)
+            elif self.conditioning_mode == "prefix":
+                modules.append(self.goal_prefix)
+            elif self.conditioning_mode == "prefix_kv":
+                modules.extend([self.goal_prefix_keys, self.goal_prefix_values])
+            elif self.conditioning_mode != "slot_prefix":
+                raise ValueError(f"Unknown conditioning_mode {self.conditioning_mode!r}")
+            if self.goal_pooling == "facet_tokens":
+                modules.append(self.goal_slot_facet_head)
+            else:
+                modules.append(self.facet_head)
+                if self.goal_vectors > 1:
+                    direct_parameters.append(self.goal_queries)
         if self.spec.review is not None:
             modules.append(self.review_head)
+            if self.spec.review != "final" and self.goal_vectors > 1:
+                direct_parameters.append(self.review_queries)
         if self.spec.validator is not None:
             modules.extend([self.validator_body, self.validator_score, self.validator_facets])
         if self.spec.validator == "reread":
             modules.append(self.goal_head)
-        unique = {id(parameter): parameter for module in modules for parameter in module.parameters()}
+        unique = {
+            id(parameter): parameter
+            for parameter in [
+                *(parameter for module in modules for parameter in module.parameters()),
+                *direct_parameters,
+            ]
+        }
         return sum(parameter.numel() for parameter in unique.values())
 
     def _embeddings(self, ids: torch.Tensor, mode: str, *, offset: int = 0) -> torch.Tensor:
@@ -369,9 +392,23 @@ class ModeTransformer(nn.Module):
             self._embeddings(prompt, "encode"), padding,
             causal=self.spec.encode_mask == "causal",
         )
-        goal = self._extract_state(
-            hidden, padding, queries=self.goal_queries, head=self.goal_head
-        )
+        if self.goal_pooling == "facet_tokens":
+            slots = []
+            for facet in range(self.vocab.max_facets):
+                matches = prompt.eq(self.vocab.requirement(facet, 0)) | prompt.eq(
+                    self.vocab.requirement(facet, 1)
+                )
+                if not matches.sum(1).eq(1).all():
+                    raise ValueError(
+                        "facet_tokens pooling requires exactly one requirement token per facet"
+                    )
+                positions = matches.to(torch.int64).argmax(1)
+                slots.append(hidden[torch.arange(len(prompt), device=prompt.device), positions])
+            goal = self.goal_head(torch.stack(slots, dim=1))
+        else:
+            goal = self._extract_state(
+                hidden, padding, queries=self.goal_queries, head=self.goal_head
+            )
         return hidden, goal
 
     def prepare_generation(
@@ -387,13 +424,18 @@ class ModeTransformer(nn.Module):
         goal = None
         goal_prompt = prompt if goal_prompt is None else goal_prompt
         if self.spec.encode_mask is not None:
-            encoded, goal = self.encode(goal_prompt)
-            if self.spec.encoded_prompt and not self.generation_prompt_only:
-                prefix = encoded + self.mode_embedding.weight[MODES["generate"]][None, None, :]
-                prefix_padding = goal_prompt.eq(self.vocab.PAD)
-            else:
+            if forced_goal is not None and self.generation_prompt_only:
+                goal = forced_goal
                 prefix = self._embeddings(prompt, "generate")
                 prefix_padding = prompt_padding
+            else:
+                encoded, goal = self.encode(goal_prompt)
+                if self.spec.encoded_prompt and not self.generation_prompt_only:
+                    prefix = encoded + self.mode_embedding.weight[MODES["generate"]][None, None, :]
+                    prefix_padding = goal_prompt.eq(self.vocab.PAD)
+                else:
+                    prefix = self._embeddings(prompt, "generate")
+                    prefix_padding = prompt_padding
         else:
             prefix = self._embeddings(prompt, "generate")
             prefix_padding = prompt_padding
@@ -413,6 +455,27 @@ class ModeTransformer(nn.Module):
                 )
                 latent_prefix = (
                     latent_prefix
+                    + self.mode_embedding.weight[MODES["generate"]][None, None, :]
+                )
+                prefix = torch.cat([prefix, latent_prefix], dim=1)
+                prefix_padding = torch.cat(
+                    [
+                        prefix_padding,
+                        torch.zeros(
+                            (prompt.shape[0], self.prefix_tokens),
+                            dtype=torch.bool,
+                            device=prompt.device,
+                        ),
+                    ],
+                    dim=1,
+                )
+            elif self.conditioning_mode == "slot_prefix":
+                if effective_goal.ndim != 3 or effective_goal.shape[1] != self.prefix_tokens:
+                    raise ValueError(
+                        "slot_prefix conditioning requires one encoded vector per prefix token"
+                    )
+                latent_prefix = (
+                    effective_goal
                     + self.mode_embedding.weight[MODES["generate"]][None, None, :]
                 )
                 prefix = torch.cat([prefix, latent_prefix], dim=1)
@@ -576,9 +639,16 @@ class ModeTransformer(nn.Module):
         batch: dict[str, torch.Tensor],
         invariance_weight: float,
     ) -> dict[str, torch.Tensor]:
-        raw = F.binary_cross_entropy_with_logits(
-            self.facet_head(self._flatten_state(goal)), batch["bits"], reduction="none"
-        )
+        if self.goal_pooling == "facet_tokens":
+            raw = F.binary_cross_entropy_with_logits(
+                self.goal_slot_facet_head(goal).squeeze(-1),
+                batch["bits"],
+                reduction="none",
+            )
+        else:
+            raw = F.binary_cross_entropy_with_logits(
+                self.facet_head(self._flatten_state(goal)), batch["bits"], reduction="none"
+            )
         facet = (raw * batch["active_facets"]).sum() / batch["active_facets"].sum()
         result = {"goal": facet}
         if invariance_weight > 0:

@@ -89,6 +89,7 @@ def _model(config: dict[str, Any], dataset: ConstraintDataset) -> ModeTransforme
         max_length=int(values.get("max_length", 128)),
         generation_prompt_only=bool(values.get("generation_prompt_only", False)),
         goal_vectors=int(values.get("goal_vectors", 1)),
+        goal_pooling=str(values.get("goal_pooling", "learned_queries")),
         z_injection_schedule=str(values.get("z_injection_schedule", "input_only")),
         z_injection_period=int(values.get("z_injection_period", 2)),
         conditioning_mode=str(values.get("conditioning_mode", "additive")),
@@ -424,6 +425,9 @@ def evaluate_horizon(
     shuffled_exact: list[float] = []
     satisfaction: list[float] = []
     shuffled_satisfaction: list[float] = []
+    slot_swap_exact: list[float] = []
+    slot_swap_selected: list[float] = []
+    slot_swap_untouched: list[float] = []
     quartiles: list[list[float]] = [[] for _ in range(4)]
     shuffled_quartiles: list[list[float]] = [[] for _ in range(4)]
     predictions: list[dict[str, Any]] = []
@@ -442,6 +446,7 @@ def evaluate_horizon(
         base_calls += after_base["forward_calls"] - before_base["forward_calls"]
         base_positions += after_base["token_positions"] - before_base["token_positions"]
         shuffled_generated = None
+        slot_swapped_generated = None
         if goal is not None:
             shuffled_generated, _, _ = model.generate(
                 generation_prompt,
@@ -455,6 +460,29 @@ def evaluate_horizon(
             intervention_positions += (
                 after_intervention["token_positions"] - after_base["token_positions"]
             )
+            if model.goal_pooling == "facet_tokens":
+                _, counterfactual_goal = model.encode(
+                    model.counterfactual_goal_channel(batch)
+                )
+                swapped_goal = goal.clone()
+                row_indices = torch.arange(len(goal), device=device)
+                swapped_goal[row_indices, batch["corrupt_facet"]] = counterfactual_goal[
+                    row_indices, batch["corrupt_facet"]
+                ]
+                slot_swapped_generated, _, _ = model.generate(
+                    generation_prompt,
+                    batch["target"].shape[1],
+                    forced_goal=swapped_goal,
+                )
+                after_slot_swap = model.compute_stats()
+                intervention_calls += (
+                    after_slot_swap["forward_calls"]
+                    - after_intervention["forward_calls"]
+                )
+                intervention_positions += (
+                    after_slot_swap["token_positions"]
+                    - after_intervention["token_positions"]
+                )
 
         target_mask = batch["target_mask"]
         correct = generated.eq(batch["target"]) & target_mask
@@ -475,6 +503,37 @@ def evaluate_horizon(
             )
             shuffled_exact.extend(batch_shuffled_exact.float().cpu().tolist())
             shuffled_satisfaction.extend(batch_shuffled_satisfaction.cpu().tolist())
+        batch_slot_swap_exact = None
+        batch_slot_swap_selected = None
+        batch_slot_swap_untouched = None
+        if slot_swapped_generated is not None:
+            selected_mask = batch["target_facets"].eq(
+                batch["corrupt_facet"].unsqueeze(1)
+            )
+            untouched_mask = target_mask & ~selected_mask
+            batch_slot_swap_selected = (
+                slot_swapped_generated.eq(batch["counterfactual_target"])
+                .logical_and(selected_mask)
+                .sum(1)
+                .float()
+                / selected_mask.sum(1).clamp_min(1)
+            )
+            batch_slot_swap_untouched = (
+                slot_swapped_generated.eq(batch["target"])
+                .logical_and(untouched_mask)
+                .sum(1)
+                .float()
+                / untouched_mask.sum(1).clamp_min(1)
+            )
+            batch_slot_swap_exact = _sequence_exact(
+                slot_swapped_generated,
+                batch["counterfactual_target"],
+                target_mask,
+                model.vocab.OUT_END,
+            )
+            slot_swap_selected.extend(batch_slot_swap_selected.cpu().tolist())
+            slot_swap_untouched.extend(batch_slot_swap_untouched.cpu().tolist())
+            slot_swap_exact.extend(batch_slot_swap_exact.float().cpu().tolist())
 
         active_positions = target_mask[0].nonzero().flatten()
         for quartile, positions in enumerate(torch.tensor_split(active_positions, 4)):
@@ -512,6 +571,23 @@ def evaluate_horizon(
                     shuffled_satisfaction=float(batch_shuffled_satisfaction[index]),
                     shuffled_exact=bool(batch_shuffled_exact[index]),
                 )
+            if slot_swapped_generated is not None:
+                assert batch_slot_swap_exact is not None
+                assert batch_slot_swap_selected is not None
+                assert batch_slot_swap_untouched is not None
+                row.update(
+                    counterfactual_target=raw["counterfactual_target"][index].tolist(),
+                    facet_slot_swapped_generated=slot_swapped_generated[index]
+                    .cpu()
+                    .tolist(),
+                    facet_slot_swap_exact=bool(batch_slot_swap_exact[index]),
+                    facet_slot_swap_selected_satisfaction=float(
+                        batch_slot_swap_selected[index]
+                    ),
+                    facet_slot_swap_untouched_satisfaction=float(
+                        batch_slot_swap_untouched[index]
+                    ),
+                )
             predictions.append(row)
 
     elapsed = time.perf_counter() - started
@@ -528,12 +604,12 @@ def evaluate_horizon(
         "inference_forward_calls": float(compute["forward_calls"]),
         "inference_token_positions": float(compute["token_positions"]),
         "approx_inference_flops": float(
-            2 * model.parameter_count * compute["token_positions"]
+            2 * model.active_parameter_count * compute["token_positions"]
         ),
         "base_generation_forward_calls": float(base_calls),
         "base_generation_token_positions": float(base_positions),
         "approx_base_generation_flops": float(
-            2 * model.parameter_count * base_positions
+            2 * model.active_parameter_count * base_positions
         ),
         "diagnostic_intervention_forward_calls": float(intervention_calls),
         "diagnostic_intervention_token_positions": float(intervention_positions),
@@ -558,6 +634,12 @@ def evaluate_horizon(
             metrics[f"shuffled_goal_quartile_{index + 1}_satisfaction"] = mean(
                 shuffled_quartiles[index]
             )
+    if slot_swap_exact:
+        metrics.update(
+            facet_slot_swap_exact_match=mean(slot_swap_exact),
+            facet_slot_swap_selected_satisfaction=mean(slot_swap_selected),
+            facet_slot_swap_untouched_satisfaction=mean(slot_swap_untouched),
+        )
     return metrics, predictions
 
 
@@ -840,10 +922,14 @@ def evaluate(
         "evaluation_examples": float(len(dataset)),
         "inference_forward_calls": float(compute["forward_calls"]),
         "inference_token_positions": float(compute["token_positions"]),
-        "approx_inference_flops": float(2 * model.parameter_count * compute["token_positions"]),
+        "approx_inference_flops": float(
+            2 * model.active_parameter_count * compute["token_positions"]
+        ),
         "base_generation_forward_calls": float(base_calls),
         "base_generation_token_positions": float(base_positions),
-        "approx_base_generation_flops": float(2 * model.parameter_count * base_positions),
+        "approx_base_generation_flops": float(
+            2 * model.active_parameter_count * base_positions
+        ),
         "validation_forward_calls": float(validation_calls),
         "validation_token_positions": float(validation_positions),
         "diagnostic_intervention_forward_calls": float(intervention_calls),
@@ -991,7 +1077,9 @@ def run(config: dict[str, Any], output_root: Path, repository: Path) -> Path:
         best_epoch=train_compute["best_epoch"],
         completed_joint_epochs=train_compute["completed_joint_epochs"],
         goal_warmup_epochs=train_compute["goal_warmup_epochs"],
-        approx_training_flops=6 * model.parameter_count * train_compute["token_positions"],
+        approx_training_flops=(
+            6 * model.active_parameter_count * train_compute["token_positions"]
+        ),
         device=str(device),
         **validation,
     )
