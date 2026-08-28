@@ -166,6 +166,25 @@ modal-llm train-eval --config configs/paper1/smoke.yaml
 modal-llm suite --config configs/paper1/smoke-suite.yaml
 ```
 
+### Intel GPU (XPU)
+
+On a supported Intel Arc or Core Ultra GPU, install the official XPU PyTorch wheel in
+an isolated environment, then install this project without replacing that wheel:
+
+```powershell
+py -3.11 -m venv C:\Users\j.simao\.venvs\modal-llm-xpu
+& C:\Users\j.simao\.venvs\modal-llm-xpu\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install torch --index-url https://download.pytorch.org/whl/xpu
+python -m pip install -e ".[test]"
+python -c "import torch; print(torch.xpu.is_available(), torch.xpu.get_device_name(0))"
+modal-llm train-eval --config configs/paper1/smoke-xpu.yaml
+```
+
+Configurations with `device: auto` prefer CUDA, then XPU, then CPU. Use `device: xpu`
+in a run-specific config when fallback to CPU should be an error. Run provenance records
+XPU availability and the selected Intel device name.
+
 Use `configs/paper1/main.yaml` for the main B10 run and
 `configs/paper1/baselines.yaml` for the five-seed B0--B10 comparison. Results
 are written to new timestamped directories and include configs, provenance,

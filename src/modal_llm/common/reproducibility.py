@@ -22,6 +22,8 @@ def seed_everything(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        torch.xpu.manual_seed_all(seed)
 
 
 def atomic_write_json(path: str | Path, value: Any) -> Path:
@@ -58,6 +60,7 @@ def _git_state(repository: Path) -> dict[str, Any]:
 
 
 def capture_provenance(repository: str | Path, config: dict[str, Any]) -> dict[str, Any]:
+    xpu_available = hasattr(torch, "xpu") and torch.xpu.is_available()
     return {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "git": _git_state(Path(repository)),
@@ -68,5 +71,7 @@ def capture_provenance(repository: str | Path, config: dict[str, Any]) -> dict[s
             "torch": torch.__version__,
             "cuda_available": torch.cuda.is_available(),
             "cuda_device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+            "xpu_available": xpu_available,
+            "xpu_device": torch.xpu.get_device_name(0) if xpu_available else None,
         },
     }

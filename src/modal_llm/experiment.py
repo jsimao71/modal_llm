@@ -27,9 +27,15 @@ from .model import BASELINES, ModeTransformer
 
 def _device(name: str) -> torch.device:
     if name == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            return torch.device("xpu")
+        return torch.device("cpu")
     if name == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
+    if name == "xpu" and not (hasattr(torch, "xpu") and torch.xpu.is_available()):
+        raise RuntimeError("XPU requested but unavailable")
     return torch.device(name)
 
 

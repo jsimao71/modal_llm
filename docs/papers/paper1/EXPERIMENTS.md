@@ -13,6 +13,7 @@ machine-checkable corruptions.
 python -m pip install -e .
 pytest
 modal-llm train-eval --config configs/paper1/smoke.yaml
+modal-llm train-eval --config configs/paper1/smoke-xpu.yaml
 modal-llm suite --config configs/paper1/smoke-suite.yaml
 ```
 
@@ -401,3 +402,14 @@ The synthetic suite is a diagnostic first stage, not evidence for broad language
 quality. The held-out synthetic families diagnose architectural and optimization
 failures. Executable transformations/code tasks, natural instruction benchmarks, and
 larger pretrained backbones are still required before headline claims.
+
+### Hardware execution note
+
+The runner supports CPU, CUDA, and Intel XPU devices. `device: auto` selects CUDA,
+then XPU, then CPU; an explicit unavailable accelerator fails rather than silently
+falling back. The Intel Core Ultra execution path was validated on Windows 11 with
+PyTorch 2.13.0+xpu using `configs/paper1/smoke-xpu.yaml`: training, evaluation,
+interventions, checkpoint reload, and provenance completed on `Intel(R) Graphics`.
+This is an infrastructure smoke result, not scientific evidence and not part of any
+reported condition comparison. Accelerator type and device name are retained in each
+run's provenance.

@@ -1,11 +1,39 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch
 
 from modal_llm import experiment
 from modal_llm.data import ConstraintDataset
 from modal_llm.model import ModeTransformer
+
+
+def test_auto_device_prefers_cuda_then_xpu_then_cpu(monkeypatch) -> None:
+    fake_xpu = SimpleNamespace(is_available=lambda: True)
+    monkeypatch.setattr(torch, "xpu", fake_xpu, raising=False)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    assert experiment._device("auto").type == "xpu"
+    assert experiment._device("xpu").type == "xpu"
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    assert experiment._device("auto").type == "cuda"
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    fake_xpu.is_available = lambda: False
+    assert experiment._device("auto").type == "cpu"
+
+
+def test_explicit_xpu_fails_when_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        torch, "xpu", SimpleNamespace(is_available=lambda: False), raising=False
+    )
+    try:
+        experiment._device("xpu")
+    except RuntimeError as error:
+        assert str(error) == "XPU requested but unavailable"
+    else:
+        raise AssertionError("Expected unavailable explicit XPU to fail")
 
 
 def test_task_exact_requires_active_facets_and_end_token() -> None:
